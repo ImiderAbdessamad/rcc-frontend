@@ -1,9 +1,10 @@
-/* Session analyste : sonde au démarrage, connexion, déconnexion, expiration. */
+/* Session analyste : connexion Keycloak au démarrage, profil, expiration, déconnexion. */
 
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useState,
 } from "react";
 import * as api from "../lib/api.js";
+import * as auth from "../lib/auth.js";
 
 const SessionContext = createContext(null);
 
@@ -11,8 +12,10 @@ export function SessionProvider({ children }) {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true);
   const [expiredMessage, setExpiredMessage] = useState("");
+  // Erreur au chargement du profil : compte sans rôle RCC (403), API injoignable…
+  const [accessError, setAccessError] = useState(null);
 
-  // Un 401 sur n'importe quelle route ramène à l'écran de connexion.
+  // Un 401 sur n'importe quelle route ramène à l'écran de reconnexion.
   useEffect(() => {
     api.setUnauthorizedHandler(() => {
       setUser((current) => {
@@ -25,15 +28,17 @@ export function SessionProvider({ children }) {
     return () => api.setUnauthorizedHandler(null);
   }, []);
 
+  // Sans session Keycloak, initAuth redirige vers la page de connexion.
   useEffect(() => {
     let cancelled = false;
-    api.auth
-      .me()
+    auth
+      .initAuth()
+      .then(() => api.auth.me())
       .then((me) => {
         if (!cancelled) setUser(me);
       })
-      .catch(() => {
-        /* pas de session : écran de connexion */
+      .catch((error) => {
+        if (!cancelled) setAccessError(error);
       })
       .finally(() => {
         if (!cancelled) setBooting(false);
@@ -43,26 +48,12 @@ export function SessionProvider({ children }) {
     };
   }, []);
 
-  const login = useCallback(async (username, password) => {
-    const me = await api.auth.login(username, password);
-    setExpiredMessage("");
-    setUser(me);
-    return me;
-  }, []);
-
-  const logout = useCallback(async () => {
-    try {
-      await api.auth.logout();
-    } catch {
-      /* la session est de toute façon abandonnée côté client */
-    }
-    setExpiredMessage("");
-    setUser(null);
-  }, []);
+  const login = useCallback(() => auth.login(), []);
+  const logout = useCallback(() => auth.logout(), []);
 
   const value = useMemo(
-    () => ({ user, booting, login, logout, expiredMessage }),
-    [user, booting, login, logout, expiredMessage]
+    () => ({ user, booting, login, logout, expiredMessage, accessError }),
+    [user, booting, login, logout, expiredMessage, accessError]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

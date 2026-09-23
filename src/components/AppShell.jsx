@@ -5,7 +5,6 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import Icon, { ICONS } from "./Icon.jsx";
 import { initials } from "../lib/format.js";
 import { useSession } from "../hooks/useSession.jsx";
-import { useToasts } from "../hooks/useToasts.jsx";
 
 const NAV = [
   { to: "/dossiers", key: "list", label: "Dossiers", tip: "Dossiers RCC", icon: ICONS.folder },
@@ -16,7 +15,6 @@ const NAV = [
 
 export default function AppShell({ lastDossierId, children }) {
   const { user, logout } = useSession();
-  const { toast } = useToasts();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -62,10 +60,10 @@ export default function AppShell({ lastDossierId, children }) {
     navigate(target);
   }
 
-  async function onLogout() {
+  function onLogout() {
     setMenuOpen(false);
-    await logout();
-    toast("Vous êtes déconnecté.", { title: "Session close", type: "info", timeout: 3000 });
+    // Ferme la session Keycloak puis recharge l'application (retour sur la page de connexion).
+    logout();
   }
 
   const userInitials = user?.initials || initials(user?.display_name);

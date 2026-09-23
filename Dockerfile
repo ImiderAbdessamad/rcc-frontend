@@ -26,7 +26,8 @@ COPY nginx.conf /etc/nginx/default.conf.tpl
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 COPY --from=build /src/dist /usr/share/nginx/html
 
-RUN chmod +x /docker-entrypoint.sh
+# Fins de ligne Windows retirées : le script peut venir d'une copie depuis un poste Windows.
+RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 
 EXPOSE 80
 

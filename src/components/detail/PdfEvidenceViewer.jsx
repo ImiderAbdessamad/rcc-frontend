@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
+import * as api from "../../lib/api.js";
 import Icon, { ICONS } from "../Icon.jsx";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -34,7 +35,14 @@ function evidenceState(tone, confidence, missing) {
   return `Contrôle requis · ${score}`;
 }
 
-export default function PdfEvidenceViewer({ fileUrl, filename, fields, documentEvidence = [], activeCode, activeEvidencePage, onFocusField }) {
+/** Ouvre le PDF déjà chargé dans un nouvel onglet (un lien direct n'enverrait pas le token). */
+function openBlob(blob) {
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export default function PdfEvidenceViewer({ dossierId, filename, fields, documentEvidence = [], activeCode, activeEvidencePage, onFocusField }) {
   const canvasRef = useRef(null);
   const hostRef = useRef(null);
   const pdfRef = useRef(null);
@@ -47,6 +55,7 @@ export default function PdfEvidenceViewer({ fileUrl, filename, fields, documentE
   const [rendering, setRendering] = useState(false);
   const [highlightWarning, setHighlightWarning] = useState(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [fileBlob, setFileBlob] = useState(null);
   const [showEvidence, setShowEvidence] = useState(true);
   const [importantCodes, setImportantCodes] = useState(() => new Set());
   const [rectangles, setRectangles] = useState([]);
@@ -73,28 +82,40 @@ export default function PdfEvidenceViewer({ fileUrl, filename, fields, documentE
 
   useEffect(() => {
     let disposed = false;
-    const task = getDocument({ url: fileUrl, withCredentials: true });
-    setStatus("loading"); setError(null); setPageCount(0);
-    task.promise.then((pdf) => {
+    let task = null;
+    const controller = new AbortController();
+    setStatus("loading"); setError(null); setPageCount(0); setFileBlob(null);
+
+    (async () => {
+      const blob = await api.dossiers.file(dossierId, { signal: controller.signal });
+      if (disposed) return;
+      setFileBlob(blob);
+      const data = new Uint8Array(await blob.arrayBuffer());
+      if (disposed) return;
+      task = getDocument({ data });
+      const pdf = await task.promise;
       if (disposed) { pdf.destroy(); return; }
       pdfRef.current = pdf;
       setPageCount(pdf.numPages);
       setPageNumber((current) => Math.min(Math.max(1, current), pdf.numPages));
       setStatus("ready");
-    }).catch(() => {
-      if (!disposed) {
-        setError("Le fichier est indisponible ou son format n'est pas pris en charge par ce navigateur.");
-        setStatus("error");
-      }
+    })().catch((reason) => {
+      if (disposed || reason?.name === "AbortError") return;
+      setError(reason?.status
+        ? reason.message
+        : "Le fichier est indisponible ou son format n'est pas pris en charge par ce navigateur.");
+      setStatus("error");
     });
+
     return () => {
       disposed = true;
+      controller.abort();
       renderRef.current?.cancel?.();
       if (typeof pdfRef.current?.destroy === "function") pdfRef.current.destroy();
       pdfRef.current = null;
-      if (typeof task.destroy === "function") task.destroy();
+      if (typeof task?.destroy === "function") task.destroy();
     };
-  }, [fileUrl, loadAttempt]);
+  }, [dossierId, loadAttempt]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -201,7 +222,7 @@ export default function PdfEvidenceViewer({ fileUrl, filename, fields, documentE
       <span style={{ flex: 1 }} />
       <button type="button" className={`btn btn-ghost btn-sm${showEvidence ? " is-selected" : ""}`} onClick={() => setShowEvidence((value) => !value)}><Icon paths={ICONS.highlight} size={13} width={2} />{showEvidence ? "Masquer les preuves" : "Afficher les preuves"}</button>
       <button type="button" className="btn btn-soft btn-sm" disabled={!activeCode} onClick={toggleImportant}><Icon paths={ICONS.highlight} size={13} width={2} />{activeIsImportant ? "Retirer l'important" : "Marquer important"}</button>
-      <a className="btn btn-ghost btn-sm" href={fileUrl} target="_blank" rel="noopener noreferrer">Ouvrir</a>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={!fileBlob} onClick={() => openBlob(fileBlob)}>Ouvrir</button>
     </div>
     <div className="pdf-canvas-scroll pane-scroll" ref={hostRef}>
       <div className="pdf-stage">
@@ -212,7 +233,9 @@ export default function PdfEvidenceViewer({ fileUrl, filename, fields, documentE
             <span>{error}</span>
             <div className="pdf-status-actions">
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Réessayer</button>
-              <a className="btn btn-dark btn-sm" href={fileUrl} target="_blank" rel="noopener noreferrer">Ouvrir le PDF</a>
+              {fileBlob ? (
+                <button type="button" className="btn btn-dark btn-sm" onClick={() => openBlob(fileBlob)}>Ouvrir le PDF</button>
+              ) : null}
             </div>
           </div>
         ) : null}

@@ -1,55 +1,43 @@
-/* Écran de connexion. */
+/*
+ * Écran de reconnexion. La saisie des identifiants se fait sur la page
+ * Keycloak : cet écran n'apparaît qu'après une session expirée ou un refus
+ * d'accès (compte sans rôle RCC, API injoignable).
+ */
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useSession } from "../hooks/useSession.jsx";
-import { useToasts } from "../hooks/useToasts.jsx";
+
+function errorMessage(error) {
+  if (!error) return "";
+  if (error.status === 403) {
+    return "Votre compte est bien authentifié, mais il n'a pas accès à l'application RCC. "
+      + "Demandez l'habilitation RCC à votre administrateur.";
+  }
+  if (error.status === 401) {
+    // Session Keycloak valide mais jeton refusé par l'API : se reconnecter
+    // relancerait la même session, d'où la déconnexion Keycloak proposée.
+    return "Le serveur RCC a refusé votre connexion. Reconnectez-vous ; "
+      + "si le problème persiste, contactez l'administrateur.";
+  }
+  return error.message;
+}
 
 export default function Login() {
-  const { login, expiredMessage } = useSession();
-  const { toast } = useToasts();
-
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState(expiredMessage);
-  const [invalid, setInvalid] = useState(null); // "user" | "password"
+  const { login, logout, expiredMessage, accessError } = useSession();
   const [busy, setBusy] = useState(false);
 
-  const userRef = useRef(null);
-  const passwordRef = useRef(null);
+  const forbidden = accessError?.status === 403;
+  const rejected = !expiredMessage && accessError?.status === 401;
+  const message = expiredMessage || errorMessage(accessError);
 
-  useEffect(() => {
-    userRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    if (expiredMessage) setError(expiredMessage);
-  }, [expiredMessage]);
-
-  async function onSubmit(event) {
-    event.preventDefault();
-    setError("");
-    setInvalid(null);
-
-    if (!username.trim() || !password) {
-      setError("Renseignez votre identifiant et votre mot de passe.");
-      const field = username.trim() ? "password" : "user";
-      setInvalid(field);
-      (field === "user" ? userRef : passwordRef).current?.focus();
-      return;
-    }
-
+  function onLogin() {
     setBusy(true);
-    try {
-      const me = await login(username.trim(), password);
-      setPassword("");
-      toast(`Bienvenue, ${me.display_name}.`, { title: "Connecté", type: "ok", timeout: 3600 });
-    } catch (err) {
-      setError(err.message);
-      setInvalid("password");
-      passwordRef.current?.focus();
-    } finally {
-      setBusy(false);
-    }
+    login();
+  }
+
+  function onSwitchAccount() {
+    setBusy(true);
+    logout();
   }
 
   return (
@@ -92,47 +80,25 @@ export default function Login() {
       </div>
 
       <div className="login-panel">
-        <form className="login-form" onSubmit={onSubmit} noValidate>
-          <h2>Se connecter</h2>
+        <div className="login-form">
+          <h2>{forbidden ? "Accès refusé" : "Se connecter"}</h2>
           <p className="login-sub">Accès réservé aux valideurs RCC habilités.</p>
 
-          <div className="field-group">
-            <label htmlFor="loginUser">Identifiant</label>
-            <input
-              id="loginUser"
-              ref={userRef}
-              type="email"
-              name="username"
-              autoComplete="username"
-              placeholder="prenom.nom@wafabail.ma"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              aria-describedby="loginError"
-              aria-invalid={invalid === "user" ? "true" : undefined}
-            />
-          </div>
-
-          <div className="field-group">
-            <label htmlFor="loginPwd">Mot de passe</label>
-            <input
-              id="loginPwd"
-              ref={passwordRef}
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              aria-describedby="loginError"
-              aria-invalid={invalid === "password" ? "true" : undefined}
-            />
-          </div>
-
-          <p id="loginError" className="form-error" role="alert" hidden={!error}>
-            {error}
+          <p id="loginError" className="form-error" role="alert" hidden={!message}>
+            {message}
           </p>
 
-          <button type="submit" className={`btn btn-primary btn-block${busy ? " is-busy" : ""}`} disabled={busy}>
-            <span className="btn-label">Se connecter</span>
+          <button
+            type="button"
+            className={`btn btn-primary btn-block${busy ? " is-busy" : ""}`}
+            disabled={busy}
+            onClick={forbidden || rejected ? onSwitchAccount : onLogin}
+          >
+            <span className="btn-label">
+              {forbidden
+                ? "Se connecter avec un autre compte"
+                : rejected ? "Se reconnecter" : "Se connecter avec Keycloak"}
+            </span>
             <span className="btn-spinner" aria-hidden="true" />
           </button>
 
@@ -140,7 +106,7 @@ export default function Login() {
             Toute action de validation est horodatée et tracée au nom de l'utilisateur
             connecté.
           </p>
-        </form>
+        </div>
       </div>
     </div>
   );
