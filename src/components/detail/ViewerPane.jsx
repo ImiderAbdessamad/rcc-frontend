@@ -3,7 +3,7 @@
 import { lazy, Suspense, useMemo } from "react";
 import * as api from "../../lib/api.js";
 import { CODE_ORDER } from "../../lib/fields.js";
-import { formatAmount } from "../../lib/format.js";
+import { clampCompletenessPct, formatAmount, formatCompletenessPct } from "../../lib/format.js";
 import Icon, { ICONS } from "../Icon.jsx";
 import ImportPanel from "../ImportPanel.jsx";
 import { Badge, EmptyState } from "../States.jsx";
@@ -217,9 +217,9 @@ function ImportTab({ dossier, onAttached }) {
     {
       label: "Postes RCC extraits",
       meta: result
-        ? `complétude ${formatAmount(result.completeness_pct, { decimals: true })} %`
+        ? `complétude ${formatCompletenessPct(result.completeness_pct)} %`
         : "aucun poste extrait",
-      ok: (result?.completeness_pct ?? 0) >= 100,
+      ok: clampCompletenessPct(result?.completeness_pct) >= 100,
     },
   ];
 

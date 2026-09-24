@@ -163,6 +163,18 @@ export const dossiers = {
       `RCC-${id}.json`
     );
   },
+  /** Envoie le bilan extrait vers POST /ia-clients/bilans (noRcTiers = n° tiers). */
+  pushBilan: (id, body = {}) =>
+    request(`/rcc/dossiers/${encodeURIComponent(id)}/bilans/push`, {
+      method: "POST",
+      body,
+    }),
+  /** Envoie plusieurs bilans via POST /ia-clients/bilans/batch. */
+  pushBilansBatch: (dossierIds, body = {}) =>
+    request("/rcc/dossiers/bilans/batch", {
+      method: "POST",
+      body: { dossier_ids: dossierIds, ...body },
+    }),
 };
 
 export const audit = {

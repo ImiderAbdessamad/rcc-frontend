@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import * as api from "../lib/api.js";
 import { STATUS_META } from "../lib/fields.js";
-import { formatAmount, formatDate, pluralize } from "../lib/format.js";
+import { formatAmount, formatCompletenessPct, formatDate, pluralize } from "../lib/format.js";
 import Icon, { ICONS } from "../components/Icon.jsx";
 import { Badge, ErrorState, SkeletonRows } from "../components/States.jsx";
 import Banner from "../components/detail/Banner.jsx";
@@ -36,6 +36,7 @@ export default function DossierDetail({ onDossierChanged }) {
   const [modal, setModal] = useState(null); // "reject" | "escalate" | "validated"
   const [busyAction, setBusyAction] = useState(null);
   const [busyExport, setBusyExport] = useState(null);
+  const [busyBilan, setBusyBilan] = useState(false);
 
   const pendingEdits = useRef(new Map()); // code → valeur en attente
   const timers = useRef(new Map());
@@ -285,6 +286,51 @@ export default function DossierDetail({ onDossierChanged }) {
     }
   }
 
+  async function onPushBilan() {
+    if (busyBilan) return;
+    const currentIdentite = data?.dossier?.identite || data?.dossier?.result?.identite || {};
+    const tiers = currentIdentite.tiers
+      || currentIdentite.client_lookup?.primary?.tiers
+      || currentIdentite.matched_clients?.[0]?.tiers;
+    if (!tiers) {
+      toast(
+        "Le n° tiers est absent. Relancez l'extraction pour rapprocher le client via /ia-clients/search.",
+        { title: "Envoi bilan impossible", type: "bad", timeout: 8000 }
+      );
+      return;
+    }
+    setBusyBilan(true);
+    try {
+      await flushAll({ strict: true });
+      const outcome = await api.dossiers.pushBilan(dossierId);
+      setData((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          dossier: {
+            ...current.dossier,
+            bilans_push: outcome.bilans_push || current.dossier.bilans_push,
+          },
+        };
+      });
+      toast(
+        outcome.message || `Bilan transmis · n° tiers ${tiers}`,
+        { title: "Bilan envoyé", type: "ok" }
+      );
+      announce(`Bilan du dossier ${dossierId} envoyé (tiers ${tiers}).`);
+    } catch (err) {
+      if (!err.isAuth) {
+        toast(err.message || "L'API bilans a refusé l'envoi.", {
+          title: "Envoi bilan impossible",
+          type: "bad",
+          timeout: 8000,
+        });
+      }
+    } finally {
+      setBusyBilan(false);
+    }
+  }
+
   /* ---------------------------------------------------------------- rendu --- */
 
   if (loading) {
@@ -342,7 +388,7 @@ export default function DossierDetail({ onDossierChanged }) {
   // The server applies analyst overrides and derived-field rules when it
   // computes compliance. Reuse that authoritative count so this summary can
   // never disagree with the conformity panel below it.
-  const populatedFields = Math.max(0, 20 - (compliance?.missing_fields?.length ?? 0));
+  const populatedFields = Math.min(20, Math.max(0, 20 - (compliance?.missing_fields?.length ?? 0)));
   const averageConfidence = fields.length
     ? Math.round(100 * fields.reduce((sum, field) => sum + (field.confidence || 0), 0) / fields.length)
     : 0;
@@ -373,12 +419,13 @@ export default function DossierDetail({ onDossierChanged }) {
 
           <div className="detail-head-meta">
             <span>Exercice <b>{identite.period_start || "—"} → {identite.period_end || formatDate(dossier.exercice_date)}</b></span>
+            {identite.tiers ? <span>N° tiers <b>{identite.tiers}</b></span> : null}
             <span>ICE <b>{identite.ice || dossier.ice || "non détecté"}</b></span>
             <span>IF <b>{identite.identifiant_fiscal || "non détecté"}</b></span>
             <span>TP <b>{identite.taxe_professionnelle || "—"}</b></span>
             <span className={dossier.has_document ? "conf-ok" : "conf-bad"} style={{ fontWeight: 600 }}>
               {dossier.has_document
-                ? `Extraction OCR · complétude ${formatAmount(dossier.completeness_pct, { decimals: true })} %`
+                ? `Extraction OCR · complétude ${formatCompletenessPct(dossier.completeness_pct)} %`
                 : "Liasse non rattachée"}
             </span>
           </div>
@@ -389,6 +436,27 @@ export default function DossierDetail({ onDossierChanged }) {
             <button type="button" className="btn btn-dark" disabled={Boolean(busyExport)} onClick={() => onExport("json")}>
               <Icon paths={ICONS.file} size={14} width={1.9} />
               {busyExport === "json" ? "Génération…" : "Exporter JSON"}
+            </button>
+            <button
+              type="button"
+              className={`btn btn-ghost hint${busyBilan ? " is-busy" : ""}`}
+              disabled={busyBilan || !dossier.has_document}
+              data-hint={
+                identite.tiers
+                  ? `Envoyer le bilan vers l'API IA (n° tiers ${identite.tiers})`
+                  : "Requiert un n° tiers issu de /ia-clients/search"
+              }
+              onClick={onPushBilan}
+            >
+              <Icon paths={ICONS.upload} size={14} width={1.9} />
+              <span className="btn-label">
+                {busyBilan
+                  ? "Envoi…"
+                  : dossier.bilans_push?.status === "sent"
+                    ? "Renvoyer le bilan"
+                    : "Envoyer le bilan"}
+              </span>
+              <span className="btn-spinner" aria-hidden="true" />
             </button>
           </div>
           <span className="detail-action-divider" aria-hidden="true" />
@@ -661,7 +729,7 @@ function DossierSnapshot({ dossier, compliance, populatedFields, averageConfiden
         <article>
           <small>Postes RCC renseignés</small>
           <strong>{populatedFields}<span>/20</span></strong>
-          <p>{dossier.completeness_pct}% de complétude</p>
+          <p>{formatCompletenessPct(dossier.completeness_pct)}% de complétude</p>
         </article>
         <article>
           <small>Confiance OCR moyenne</small>
@@ -727,8 +795,13 @@ function ScoringPanel({ scoring }) {
 function IdentityCard({ identite }) {
   const activite = String(identite.activite || "").trim();
   const activiteClean = /^raison sociale\b/i.test(activite) ? "" : activite;
+  const lookup = identite.client_lookup || null;
+  const matches = Array.isArray(identite.matched_clients)
+    ? identite.matched_clients
+    : lookup?.matches || [];
   const rows = [
     ["Raison sociale", identite.raison_sociale],
+    ["N° tiers", identite.tiers],
     ["Identifiant fiscal", identite.identifiant_fiscal],
     ["ICE", identite.ice],
     ["Taxe professionnelle", identite.taxe_professionnelle],
@@ -758,6 +831,39 @@ function IdentityCard({ identite }) {
           </div>
         ))}
       </dl>
+
+      {lookup ? (
+        <div className="client-lookup-block" aria-label="Rapprochement client Wafabail">
+          <div className="client-lookup-head">
+            <span className="analysis-kicker">Référentiel clients</span>
+            <strong>
+              {lookup.status === "MATCHED"
+                ? "Client trouvé"
+                : lookup.status === "MULTIPLE"
+                  ? "Plusieurs correspondances"
+                  : lookup.status === "NOT_FOUND"
+                    ? "Aucun client"
+                    : lookup.status === "ERROR"
+                      ? "API indisponible"
+                      : "Non recherché"}
+            </strong>
+          </div>
+          {lookup.message ? <p className="client-lookup-msg">{lookup.message}</p> : null}
+          {matches.length > 1 ? (
+            <ul className="client-lookup-list">
+              {matches.slice(0, 5).map((item, index) => (
+                <li key={`${item.tiers || item.ice || index}`}>
+                  <b>{item.tiers || "—"}</b>
+                  {" · "}
+                  {item.raison_sociale || "Sans raison sociale"}
+                  {item.ice ? ` · ICE ${item.ice}` : ""}
+                  {item.rc ? ` · RC ${item.rc}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

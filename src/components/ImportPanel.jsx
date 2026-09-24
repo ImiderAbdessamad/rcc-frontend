@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import * as api from "../lib/api.js";
-import { formatAmount, formatFileSize } from "../lib/format.js";
+import { formatCompletenessPct, formatFileSize } from "../lib/format.js";
 import Icon, { ICONS } from "./Icon.jsx";
 import { Badge } from "./States.jsx";
 import { useJobFollower } from "../hooks/index.js";
@@ -127,7 +127,7 @@ export default function ImportPanel({ title, compact = false, onCompleted, onWor
           },
         });
 
-        const completeness = formatAmount(result.completeness_pct, { decimals: true });
+        const completeness = formatCompletenessPct(result.completeness_pct);
         patch(key, {
           status: "done", pct: 100, indeterminate: false,
           message: `Extraction terminée · complétude ${completeness} %`,

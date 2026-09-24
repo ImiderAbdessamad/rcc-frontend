@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import * as api from "../lib/api.js";
 import { STATUS_META } from "../lib/fields.js";
-import { formatAmountMad, formatDate, pluralize } from "../lib/format.js";
+import { clampCompletenessPct, formatAmountMad, formatDate, pluralize } from "../lib/format.js";
 import Icon, { ICONS } from "../components/Icon.jsx";
 import Modal, { BusyButton } from "../components/Modal.jsx";
 import { Badge, EmptyState, ErrorState, SkeletonRows } from "../components/States.jsx";
@@ -34,6 +34,8 @@ export default function DossierList({ activeId }) {
   const [error, setError] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [busyBatch, setBusyBatch] = useState(false);
   const abortRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -64,6 +66,7 @@ export default function DossierList({ activeId }) {
 
   useEffect(() => {
     setLoading(true);
+    setSelected(new Set());
     load();
     return () => abortRef.current?.abort();
   }, [load]);
@@ -90,6 +93,11 @@ export default function DossierList({ activeId }) {
       await api.dossiers.remove(deleteTarget.id);
       const deletedId = deleteTarget.id;
       setDeleteTarget(null);
+      setSelected((current) => {
+        const next = new Set(current);
+        next.delete(deletedId);
+        return next;
+      });
       toast(`Le dossier ${deletedId} et son document associé ont été supprimés.`, {
         title: "Suppression terminée",
         type: "ok",
@@ -102,10 +110,65 @@ export default function DossierList({ activeId }) {
     }
   }
 
+  function toggleSelected(id) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const ids = data.items.map((item) => item.id);
+    setSelected((current) => {
+      if (ids.length && ids.every((id) => current.has(id))) return new Set();
+      return new Set(ids);
+    });
+  }
+
+  async function onPushBatch() {
+    const ids = [...selected];
+    if (!ids.length || busyBatch) return;
+    setBusyBatch(true);
+    try {
+      const outcome = await api.dossiers.pushBilansBatch(ids);
+      const failed = (outcome.results || []).filter((row) => !row.ok);
+      toast(
+        outcome.message
+          || `${outcome.sent || 0} bilan(s) transmis${failed.length ? ` · ${failed.length} échec(s)` : ""}`,
+        {
+          title: failed.length ? "Envoi batch partiel" : "Bilans envoyés",
+          type: failed.length ? "warn" : "ok",
+          timeout: 8000,
+        }
+      );
+      if (failed.length) {
+        const sample = failed.slice(0, 3).map((row) => `${row.dossier_id}: ${row.error}`).join(" · ");
+        announce(sample);
+      }
+      setSelected(new Set());
+      await load();
+    } catch (err) {
+      const detail = err.body?.detail;
+      const message = typeof detail === "object" && detail?.message
+        ? detail.message
+        : err.message;
+      toast(message || "Envoi batch impossible.", {
+        title: "Envoi bilans impossible",
+        type: "bad",
+        timeout: 8000,
+      });
+    } finally {
+      setBusyBatch(false);
+    }
+  }
+
   const counts = data.counts || {};
   const searching = Boolean(debouncedSearch.trim());
   const hiddenByFilter = searching && status !== "all";
   const filterLabel = FILTERS.find((f) => f.key === status)?.label ?? "";
+  const allVisibleSelected = data.items.length > 0 && data.items.every((item) => selected.has(item.id));
 
   const stats = [
     { status: "pending", label: "En attente de validation", value: counts.pending ?? 0, note: "dossiers", tone: "is-warn" },
@@ -120,6 +183,20 @@ export default function DossierList({ activeId }) {
         title="Validation RCC · bilans OCR"
         subtitle="Bilans extraits par OCR en attente de contrôle humain avant enrichissement du modèle EKIP."
       >
+        <button
+          type="button"
+          className={`btn btn-dark${busyBatch ? " is-busy" : ""}`}
+          disabled={!selected.size || busyBatch}
+          onClick={onPushBatch}
+        >
+          <Icon paths={ICONS.upload} size={14} width={1.9} />
+          {busyBatch
+            ? "Envoi batch…"
+            : selected.size
+              ? `Envoyer bilans (${selected.size})`
+              : "Envoyer bilans"}
+          <span className="btn-spinner" aria-hidden="true" />
+        </button>
         <button type="button" className="btn btn-ghost" onClick={() => navigate("/import")}>
           Importer une liasse
         </button>
@@ -194,6 +271,14 @@ export default function DossierList({ activeId }) {
             <div className="table-scroll">
               <div className="table" role="table" aria-label="Dossiers RCC">
                 <div className="tr th" role="row">
+                  <span role="columnheader" className="c-check">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Sélectionner tous les dossiers visibles"
+                    />
+                  </span>
                   <span role="columnheader" className="c-id">N° de dossier</span>
                   <span role="columnheader" className="c-name">Client / Raison sociale</span>
                   <span role="columnheader" className="c-date">Date d'exercice</span>
@@ -240,6 +325,8 @@ export default function DossierList({ activeId }) {
                         key={dossier.id}
                         dossier={dossier}
                         active={dossier.id === activeId}
+                        selected={selected.has(dossier.id)}
+                        onToggle={() => toggleSelected(dossier.id)}
                         onOpen={() => navigate(`/validation/${encodeURIComponent(dossier.id)}`)}
                         onDelete={() => setDeleteTarget(dossier)}
                       />
@@ -305,13 +392,16 @@ export default function DossierList({ activeId }) {
   );
 }
 
-function DossierRow({ dossier, active, onOpen, onDelete }) {
+function DossierRow({ dossier, active, selected, onToggle, onOpen, onDelete }) {
   const meta = STATUS_META[dossier.status] || STATUS_META.pending;
   const tone = meta.cls.replace("badge-", "");
+  const tiers = dossier.tiers
+    || dossier.identite?.tiers
+    || dossier.client_lookup?.primary?.tiers;
 
   return (
     <div
-      className={`row tr${active ? " is-active" : ""}`}
+      className={`row tr${active ? " is-active" : ""}${selected ? " is-selected" : ""}`}
       role="row"
       tabIndex={0}
       aria-label={`Dossier ${dossier.id}, ${dossier.client_name}, ${meta.label}`}
@@ -323,6 +413,14 @@ function DossierRow({ dossier, active, onOpen, onDelete }) {
         }
       }}
     >
+      <span className="c-check" role="cell" onClick={(event) => event.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={Boolean(selected)}
+          onChange={onToggle}
+          aria-label={`Sélectionner ${dossier.id}`}
+        />
+      </span>
       <span className="c-id" role="cell">
         <span className="row-id">{dossier.id}</span>
       </span>
@@ -339,11 +437,15 @@ function DossierRow({ dossier, active, onOpen, onDelete }) {
               return label;
             })()
           }</span>
+          {tiers ? <span className="row-sector">Tiers {tiers}</span> : null}
           {dossier.ice ? <span className="row-sector">ICE {dossier.ice}</span> : null}
           {dossier.identifiant_fiscal ? <span className="row-sector">IF {dossier.identifiant_fiscal}</span> : null}
           <Badge tone={dossier.has_document ? "ok" : "bad"} className="badge-xs">
             {dossier.has_document ? "Liasse OCR ✓" : "Liasse manquante"}
           </Badge>
+          {dossier.bilans_push?.status === "sent" ? (
+            <Badge tone="ok" className="badge-xs">Bilan envoyé</Badge>
+          ) : null}
         </span>
       </span>
 
@@ -352,11 +454,11 @@ function DossierRow({ dossier, active, onOpen, onDelete }) {
 
       <span className="c-quality" role="cell">
         <span className="quality-line">
-          <span>{Math.round(dossier.completeness_pct)} %</span>
+          <span>{Math.round(clampCompletenessPct(dossier.completeness_pct))} %</span>
           <span>{dossier.override_count ? `${dossier.override_count} revu(s)` : "OCR"}</span>
         </span>
-        <span className="quality-track" aria-label={`Complétude RCC ${Math.round(dossier.completeness_pct)} %`}>
-          <span style={{ width: `${Math.max(0, Math.min(100, dossier.completeness_pct))}%` }} />
+        <span className="quality-track" aria-label={`Complétude RCC ${Math.round(clampCompletenessPct(dossier.completeness_pct))} %`}>
+          <span style={{ width: `${clampCompletenessPct(dossier.completeness_pct)}%` }} />
         </span>
       </span>
 

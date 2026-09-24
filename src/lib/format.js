@@ -10,6 +10,17 @@ export function formatAmount(value, { decimals = false } = {}) {
   return fmt.format(Number(value)).replace(/[  ]/g, " ");
 }
 
+/** Complétude OCR / RCC : jamais hors [0, 100]. */
+export function clampCompletenessPct(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
+}
+
+export function formatCompletenessPct(value, { decimals = true } = {}) {
+  return formatAmount(clampCompletenessPct(value), { decimals });
+}
+
 export function formatAmountMad(value) {
   const formatted = formatAmount(value);
   return formatted === "—" ? "—" : `${formatted} MAD`;
