@@ -1,7 +1,6 @@
 /* Panneau gauche : document original, zones extraites, pièces & import. */
 
 import { lazy, Suspense, useMemo } from "react";
-import * as api from "../../lib/api.js";
 import { CODE_ORDER } from "../../lib/fields.js";
 import { clampCompletenessPct, formatAmount, formatCompletenessPct } from "../../lib/format.js";
 import Icon, { ICONS } from "../Icon.jsx";
@@ -70,7 +69,6 @@ export default function ViewerPane({
 /* --------------------------------------------------------------- document --- */
 
 function DocumentTab({ dossier, activeCode, activeEvidencePage, onFocusField }) {
-  const fileUrl = api.dossiers.fileUrl(dossier.id);
   const exercise = dossier.result?.document?.exercise;
   const filename = dossier.filename || dossier.id;
   const filenameFullYear = filename.match(/\b(?:19|20)\d{2}\b/)?.[0];
@@ -97,7 +95,7 @@ function DocumentTab({ dossier, activeCode, activeEvidencePage, onFocusField }) 
     <div className="pane-body">
       <Suspense fallback={<div className="pdf-viewer-loading"><span className="pdf-loader" aria-hidden="true" />Initialisation du lecteur PDF…</div>}>
         <PdfEvidenceViewer
-          fileUrl={fileUrl}
+          dossierId={dossier.id}
           filename={filename}
           fields={dossier.result?.fields ?? []}
           documentEvidence={documentEvidence}

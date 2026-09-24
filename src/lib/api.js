@@ -1,6 +1,9 @@
 /* Client HTTP de l'API RCC. Une seule couche d'erreurs pour toute l'interface. */
 
+import { getToken } from "./auth.js";
+
 const BASE = "/api/v1";
+const UNREACHABLE = "Serveur injoignable. Vérifiez que l'API est démarrée puis réessayez.";
 
 export class ApiError extends Error {
   constructor(message, { status = 0, body = null } = {}) {
@@ -27,30 +30,33 @@ function detailToMessage(detail, fallback) {
   return fallback;
 }
 
-async function request(path, { method = "GET", body, signal, isForm = false, authChallenge = true } = {}) {
-  let response;
+/** fetch vers l'API avec l'access token Keycloak. */
+async function authorizedFetch(path, { headers, ...init } = {}) {
+  const token = await getToken();
+  const allHeaders = new Headers(headers);
+  if (token) allHeaders.set("Authorization", `Bearer ${token}`);
   try {
-    response = await fetch(`${BASE}${path}`, {
-      method,
-      signal,
-      credentials: "same-origin",
-      headers: isForm || body == null ? undefined : { "Content-Type": "application/json" },
-      body: isForm ? body : body == null ? undefined : JSON.stringify(body),
-    });
+    return await fetch(`${BASE}${path}`, { ...init, headers: allHeaders, credentials: "same-origin" });
   } catch (error) {
     if (error.name === "AbortError") throw error;
-    throw new ApiError(
-      "Serveur injoignable. Vérifiez que l'API est démarrée puis réessayez.",
-      { status: 0 }
-    );
+    throw new ApiError(UNREACHABLE, { status: 0 });
   }
+}
 
-  // `authChallenge: false` sur /auth/login : un 401 y signifie « mauvais
-  // identifiants », pas « session expirée ».
-  if (response.status === 401 && authChallenge) {
-    onUnauthorized?.();
-    throw new ApiError("Session expirée — reconnectez-vous.", { status: 401 });
-  }
+function sessionExpired() {
+  onUnauthorized?.();
+  return new ApiError("Session expirée — reconnectez-vous.", { status: 401 });
+}
+
+async function request(path, { method = "GET", body, signal, isForm = false } = {}) {
+  const response = await authorizedFetch(path, {
+    method,
+    signal,
+    headers: isForm || body == null ? undefined : { "Content-Type": "application/json" },
+    body: isForm ? body : body == null ? undefined : JSON.stringify(body),
+  });
+
+  if (response.status === 401) throw sessionExpired();
 
   if (response.status === 204) return null;
 
@@ -75,31 +81,23 @@ function filenameFromDisposition(value, fallback) {
   return value.match(/filename="?([^";]+)"?/i)?.[1] || fallback;
 }
 
-async function downloadRequest(path, fallbackName) {
-  let response;
-  try {
-    response = await fetch(`${BASE}${path}`, { credentials: "same-origin" });
-  } catch {
-    throw new ApiError(
-      "Serveur injoignable. Vérifiez que l'API est démarrée puis réessayez.",
-      { status: 0 }
-    );
-  }
-
-  if (response.status === 401) {
-    onUnauthorized?.();
-    throw new ApiError("Session expirée — reconnectez-vous.", { status: 401 });
-  }
+/** Fichier binaire authentifié (export, PDF) : un lien <a href> n'enverrait pas le token. */
+async function blobRequest(path, { signal, errorLabel }) {
+  const response = await authorizedFetch(path, { signal });
+  if (response.status === 401) throw sessionExpired();
   if (!response.ok) {
     const isJson = (response.headers.get("content-type") || "").includes("application/json");
     const payload = isJson ? await response.json().catch(() => null) : null;
     throw new ApiError(
-      detailToMessage(payload?.detail, `Erreur ${response.status} lors de l'export.`),
+      detailToMessage(payload?.detail, `Erreur ${response.status} ${errorLabel}.`),
       { status: response.status, body: payload }
     );
   }
+  return { response, blob: await response.blob() };
+}
 
-  const blob = await response.blob();
+async function downloadRequest(path, fallbackName) {
+  const { response, blob } = await blobRequest(path, { errorLabel: "lors de l'export" });
   const filename = filenameFromDisposition(
     response.headers.get("content-disposition"),
     fallbackName
@@ -117,15 +115,9 @@ async function downloadRequest(path, fallbackName) {
 
 /* ------------------------------------------------------------ Session --- */
 
+// Connexion et déconnexion passent par Keycloak (lib/auth.js).
 export const auth = {
   me: () => request("/auth/me"),
-  login: (username, password) =>
-    request("/auth/login", {
-      method: "POST",
-      body: { username, password },
-      authChallenge: false,
-    }),
-  logout: () => request("/auth/logout", { method: "POST" }),
 };
 
 /* ----------------------------------------------------------- Dossiers --- */
@@ -153,7 +145,14 @@ export const dossiers = {
     request(`/rcc/dossiers/${encodeURIComponent(id)}/attach`, { method: "POST", body: payload }),
   audit: (id, { signal } = {}) =>
     request(`/rcc/dossiers/${encodeURIComponent(id)}/audit`, { signal }),
-  fileUrl: (id) => `${BASE}/rcc/dossiers/${encodeURIComponent(id)}/file`,
+  /** PDF original de la liasse, en Blob. */
+  file: async (id, { signal } = {}) => {
+    const { blob } = await blobRequest(`/rcc/dossiers/${encodeURIComponent(id)}/file`, {
+      signal,
+      errorLabel: "lors du chargement du PDF",
+    });
+    return blob;
+  },
   exportFile: (id, format = "json") => {
     if (format !== "json") {
       throw new ApiError("Seul l'export JSON métier est disponible.", { status: 422 });
@@ -189,14 +188,15 @@ export const system = {
 
 export const jobs = {
   /** Envoi du PDF avec progression d'upload (fetch n'expose pas onprogress). */
-  create(file, { onUploadProgress } = {}) {
+  async create(file, { onUploadProgress } = {}) {
+    const token = await getToken();
     return new Promise((resolve, reject) => {
       const form = new FormData();
       form.append("file", file);
 
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${BASE}/rcc/jobs`);
-      xhr.withCredentials = true;
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
       xhr.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
@@ -208,8 +208,7 @@ export const jobs = {
         let payload = null;
         try { payload = JSON.parse(xhr.responseText); } catch { /* réponse non JSON */ }
         if (xhr.status === 401) {
-          onUnauthorized?.();
-          reject(new ApiError("Session expirée — reconnectez-vous.", { status: 401 }));
+          reject(sessionExpired());
           return;
         }
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -237,7 +236,10 @@ export const jobs = {
   result: (jobId, { signal } = {}) =>
     request(`/rcc/jobs/${encodeURIComponent(jobId)}/result`, { signal }),
 
-  streamUrl: (jobId) => `${BASE}/rcc/jobs/${encodeURIComponent(jobId)}/stream`,
+  // EventSource n'envoie pas d'en-tête : le backend accepte le token en query sur ce seul flux.
+  streamUrl: (jobId, token) =>
+    `${BASE}/rcc/jobs/${encodeURIComponent(jobId)}/stream`
+    + (token ? `?access_token=${encodeURIComponent(token)}` : ""),
 
   exportJson: (jobId) =>
     downloadRequest(
@@ -309,11 +311,10 @@ export function followJob(jobId, { onProgress } = {}) {
     pollTimer = setTimeout(poll, 2500);
   };
 
-  const promise = new Promise((resolve, reject) => {
-    settle = { resolve, reject };
-
+  const openStream = (token) => {
+    if (cancelled) return;
     try {
-      source = new EventSource(jobs.streamUrl(jobId), { withCredentials: true });
+      source = new EventSource(jobs.streamUrl(jobId, token));
     } catch {
       poll();
       return;
@@ -346,12 +347,18 @@ export function followJob(jobId, { onProgress } = {}) {
     });
 
     source.onerror = () => {
-      // EventSource retente seul ; s'il a définitivement fermé, on bascule en polling.
+      // EventSource retente seul ; s'il a définitivement fermé (coupure, token
+      // expiré → 401), on bascule en polling, qui renouvelle le token à chaque appel.
       if (!source || source.readyState === EventSource.CLOSED) {
         cleanup();
         poll();
       }
     };
+  };
+
+  const promise = new Promise((resolve, reject) => {
+    settle = { resolve, reject };
+    getToken().then(openStream);
   });
 
   return {
