@@ -23,7 +23,7 @@ const runtime = window.__RCC_CONFIG__ || {};
 
 export const keycloak = new Keycloak({
   url: runtime.keycloakUrl || import.meta.env.VITE_KEYCLOAK_URL || "https://keycloak.app-dev.wafabail.ma",
-  realm: runtime.keycloakRealm || import.meta.env.VITE_KEYCLOAK_REALM || "rcc",
+  realm: runtime.keycloakRealm || import.meta.env.VITE_KEYCLOAK_REALM || "scoring-rcc",
   clientId: runtime.keycloakClientId || import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "rcc-wb",
 });
 
