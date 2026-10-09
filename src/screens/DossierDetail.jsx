@@ -11,12 +11,31 @@ import Banner from "../components/detail/Banner.jsx";
 import CompliancePanel from "../components/detail/CompliancePanel.jsx";
 import FieldGroups from "../components/detail/FieldGroups.jsx";
 import ViewerPane from "../components/detail/ViewerPane.jsx";
-import {
-  EscalateModal, RejectModal, ValidatedModal,
-} from "../components/detail/DetailModals.jsx";
+import ClientLookup from "../components/detail/ClientLookup.jsx";
+import { ValidatedModal } from "../components/detail/DetailModals.jsx";
 import { useToasts } from "../hooks/useToasts.jsx";
 
 const SAVE_DEBOUNCE = 650;
+
+// Panneau du document replié par défaut ; le dernier choix de l'analyste est mémorisé.
+const DOCUMENT_COLLAPSED_KEY = "rcc.detail.documentCollapsed";
+
+function readDocumentCollapsed() {
+  try {
+    const stored = localStorage.getItem(DOCUMENT_COLLAPSED_KEY);
+    return stored === null ? true : stored === "1";
+  } catch {
+    return true;
+  }
+}
+
+function saveDocumentCollapsed(collapsed) {
+  try {
+    localStorage.setItem(DOCUMENT_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch {
+    /* stockage indisponible : le choix vaut pour la session */
+  }
+}
 
 export default function DossierDetail({ onDossierChanged }) {
   const { dossierId } = useParams();
@@ -30,10 +49,12 @@ export default function DossierDetail({ onDossierChanged }) {
   const [paneTab, setPaneTab] = useState("doc");
   const [activeCode, setActiveCode] = useState(null);
   const [activeEvidencePage, setActiveEvidencePage] = useState(null);
+  // Incrémenté à chaque « Voir » : le lecteur PDF recentre la valeur, même au second clic.
+  const [documentFocusTick, setDocumentFocusTick] = useState(0);
   const [targetCode, setTargetCode] = useState(null);
   const [savingCodes, setSavingCodes] = useState(new Set());
-  const [formOnly, setFormOnly] = useState(false);
-  const [modal, setModal] = useState(null); // "reject" | "escalate" | "validated"
+  const [formOnly, setFormOnly] = useState(readDocumentCollapsed);
+  const [modal, setModal] = useState(null); // "validated"
   const [busyAction, setBusyAction] = useState(null);
   const [busyExport, setBusyExport] = useState(null);
   const [busyBilan, setBusyBilan] = useState(false);
@@ -49,6 +70,13 @@ export default function DossierDetail({ onDossierChanged }) {
     else rowNodes.current.delete(code);
   }, []);
 
+  // Seul ce bouton enregistre le choix : les ouvertures automatiques ne le modifient pas.
+  function toggleDocument() {
+    const collapsed = !formOnly;
+    setFormOnly(collapsed);
+    saveDocumentCollapsed(collapsed);
+  }
+
   /* ------------------------------------------------------------ chargement --- */
 
   const load = useCallback(
@@ -60,7 +88,11 @@ export default function DossierDetail({ onDossierChanged }) {
       try {
         const payload = await api.dossiers.get(id);
         setData(payload);
-        if (!payload.dossier.has_document) setPaneTab("import");
+        // Sans liasse, le panneau de gauche sert à l'importer : il s'ouvre (sans changer le choix mémorisé).
+        if (!payload.dossier.has_document) {
+          setPaneTab("import");
+          setFormOnly(false);
+        }
         setError(null);
       } catch (err) {
         if (err.isAuth) return;
@@ -76,7 +108,7 @@ export default function DossierDetail({ onDossierChanged }) {
     setActiveCode(null);
     setActiveEvidencePage(null);
     setPaneTab("doc");
-    setFormOnly(false);
+    setFormOnly(readDocumentCollapsed());
     load(dossierId);
   }, [dossierId, load]);
 
@@ -228,7 +260,11 @@ export default function DossierDetail({ onDossierChanged }) {
     (code, { openDoc = false, scroll = true, pageNumber = null } = {}) => {
       setActiveCode(code);
       setActiveEvidencePage(pageNumber);
-      if (openDoc && data?.dossier.has_document) setPaneTab("doc");
+      if (openDoc && data?.dossier.has_document) {
+        setPaneTab("doc");
+        setFormOnly(false); // « voir dans le PDF » rouvre le document s'il était replié
+        setDocumentFocusTick((tick) => tick + 1);
+      }
       if (!scroll) return;
 
       const row = rowNodes.current.get(code);
@@ -286,16 +322,31 @@ export default function DossierDetail({ onDossierChanged }) {
     }
   }
 
+  /** Enregistre le n° tiers choisi (`selected`) ou saisi (`manual`) ; renvoie true si c'est fait. */
+  async function saveTiers(tiers, source) {
+    try {
+      const payload = await api.dossiers.setTiers(dossierId, { tiers, source });
+      setData(payload);
+      onDossierChanged?.(payload.dossier);
+      toast(`Le n° tiers ${tiers} sera envoyé à Ekip avec le bilan.`, {
+        title: source === "selected" ? "Client retenu" : "N° tiers enregistré",
+        type: "ok",
+      });
+      return true;
+    } catch (err) {
+      if (!err.isAuth) toast(err.message, { title: "N° tiers non enregistré", type: "bad", timeout: 7000 });
+      return false;
+    }
+  }
+
   async function onPushBilan() {
     if (busyBilan) return;
-    const currentIdentite = data?.dossier?.identite || data?.dossier?.result?.identite || {};
-    const tiers = currentIdentite.tiers
-      || currentIdentite.client_lookup?.primary?.tiers
-      || currentIdentite.matched_clients?.[0]?.tiers;
+    // N° tiers retenu par le backend : unique, choisi ou saisi dans le référentiel clients.
+    const tiers = data?.dossier?.identite?.tiers;
     if (!tiers) {
       toast(
-        "Le n° tiers est absent. Relancez l'extraction pour rapprocher le client via /ia-clients/search.",
-        { title: "Envoi bilan impossible", type: "bad", timeout: 8000 }
+        "Renseignez le n° tiers dans le bloc « Référentiel clients » avant l'envoi vers Ekip.",
+        { title: "Envoi Ekip impossible", type: "bad", timeout: 8000 }
       );
       return;
     }
@@ -418,84 +469,17 @@ export default function DossierDetail({ onDossierChanged }) {
           </div>
 
           <div className="detail-head-meta">
-            <span>Exercice <b>{identite.period_start || "—"} → {identite.period_end || formatDate(dossier.exercice_date)}</b></span>
-            {identite.tiers ? <span>N° tiers <b>{identite.tiers}</b></span> : null}
-            <span>ICE <b>{identite.ice || dossier.ice || "non détecté"}</b></span>
-            <span>IF <b>{identite.identifiant_fiscal || "non détecté"}</b></span>
-            <span>TP <b>{identite.taxe_professionnelle || "—"}</b></span>
-            <span className={dossier.has_document ? "conf-ok" : "conf-bad"} style={{ fontWeight: 600 }}>
-              {dossier.has_document
-                ? `Extraction OCR · complétude ${formatCompletenessPct(dossier.completeness_pct)} %`
-                : "Liasse non rattachée"}
-            </span>
+            <HeadFact label="Exercice" value={exercisePeriod(identite, dossier)} />
+            {identite.tiers ? <HeadFact label="N° tiers" value={identite.tiers} mono /> : null}
+            <HeadFact label="ICE" value={identite.ice || dossier.ice} mono />
+            <HeadFact label="IF" value={identite.identifiant_fiscal} mono />
+            <HeadFact label="TP" value={identite.taxe_professionnelle} mono />
+            {dossier.has_document ? null : (
+              <HeadFact label="Liasse" value="Non rattachée" tone="bad" />
+            )}
           </div>
         </div>
 
-        <div className="detail-actions">
-          <div className="detail-action-group" aria-label="Exporter le dossier">
-            <button type="button" className="btn btn-dark" disabled={Boolean(busyExport)} onClick={() => onExport("json")}>
-              <Icon paths={ICONS.file} size={14} width={1.9} />
-              {busyExport === "json" ? "Génération…" : "Exporter JSON"}
-            </button>
-            <button
-              type="button"
-              className={`btn btn-ghost hint${busyBilan ? " is-busy" : ""}`}
-              disabled={busyBilan || !dossier.has_document}
-              data-hint={
-                identite.tiers
-                  ? `Envoyer le bilan vers l'API IA (n° tiers ${identite.tiers})`
-                  : "Requiert un n° tiers issu de /ia-clients/search"
-              }
-              onClick={onPushBilan}
-            >
-              <Icon paths={ICONS.upload} size={14} width={1.9} />
-              <span className="btn-label">
-                {busyBilan
-                  ? "Envoi…"
-                  : dossier.bilans_push?.status === "sent"
-                    ? "Renvoyer le bilan"
-                    : "Envoyer le bilan"}
-              </span>
-              <span className="btn-spinner" aria-hidden="true" />
-            </button>
-          </div>
-          <span className="detail-action-divider" aria-hidden="true" />
-          <div className="detail-action-group" aria-label="Décision analyste">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={dossier.status === "escalated"}
-              onClick={() => setModal("escalate")}
-            >
-              Demander un arbitrage
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={dossier.status === "rejected"}
-              onClick={() => setModal("reject")}
-            >
-              Rejeter
-            </button>
-            <button
-              type="button"
-              className={`btn ${compliance.can_validate ? "btn-ok" : "btn-ghost"} hint${busyAction === "validate" ? " is-busy" : ""}`}
-              disabled={!compliance.can_validate || dossier.status === "validated" || busyAction === "validate"}
-              data-hint={
-                dossier.status === "validated"
-                  ? "Ce dossier est déjà validé"
-                  : compliance.can_validate
-                    ? "Transmettre les postes RCC au modèle EKIP"
-                    : `${pluralize(compliance.blockers, "règle")} de conformité bloquante(s) à lever avant validation`
-              }
-              onClick={onValidate}
-            >
-              <Icon paths={ICONS.check} size={14} width={2.4} />
-              <span className="btn-label">Valider le dossier</span>
-              <span className="btn-spinner" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
       </header>
 
       <div className={`split${formOnly ? " is-form-only" : ""}`}>
@@ -505,6 +489,7 @@ export default function DossierDetail({ onDossierChanged }) {
           onTabChange={setPaneTab}
           activeCode={activeCode}
           activeEvidencePage={activeEvidencePage}
+          focusTick={documentFocusTick}
           onFocusField={focusField}
           onAttached={async (jobId) => {
             try {
@@ -519,26 +504,34 @@ export default function DossierDetail({ onDossierChanged }) {
           }}
         />
 
+        {/* Ordinateur : poignée sur la séparation, ou bande verticale quand le document est replié. */}
+        <button
+          type="button"
+          className="split-dock"
+          aria-expanded={!formOnly}
+          aria-label={formOnly ? "Afficher le document" : "Replier le document"}
+          title={formOnly ? "Afficher le document" : "Replier le document"}
+          onClick={toggleDocument}
+        >
+          <span className="split-dock-knob" aria-hidden="true" />
+          <span className="split-dock-label" aria-hidden="true">Document</span>
+        </button>
+
+        {/* Petits écrans : barre pleine largeur entre document et formulaire. */}
         <button
           type="button"
           className="split-toggle"
           aria-expanded={!formOnly}
-          onClick={() => setFormOnly((current) => !current)}
+          onClick={toggleDocument}
         >
           <span className="split-toggle-label">
             {formOnly ? "Voir le document" : "Voir le formulaire"}
           </span>
         </button>
 
+        {/* Formulaire défilant + barre d'actions fixée en bas, toujours visible. */}
+        <div className="split-main">
         <div className="split-form scroll">
-          <DossierSnapshot
-            dossier={dossier}
-            compliance={compliance}
-            populatedFields={populatedFields}
-            averageConfidence={averageConfidence}
-            controlsPassed={controlsPassed}
-          />
-
           {balance?.status === "failed" ? (
             <Banner
               tone="bad"
@@ -565,21 +558,17 @@ export default function DossierDetail({ onDossierChanged }) {
               title="Liasse manquante."
               text="Aucune extraction n'est rattachée à ce dossier : la validation reste bloquée jusqu'à l'import du bilan scanné."
             >
-              <button type="button" className="btn btn-danger-solid btn-sm" onClick={() => setPaneTab("import")}>
+              <button
+                type="button"
+                className="btn btn-danger-solid btn-sm"
+                onClick={() => { setPaneTab("import"); setFormOnly(false); }}
+              >
                 Importer la liasse
               </button>
             </Banner>
-          ) : (
-            <Banner
-              tone="neutral"
-              title="Équilibre actif / passif non testable."
-              text={balance?.message || "Les totaux actif et passif n'ont pas pu être isolés dans la liasse."}
-            />
-          )}
+          ) : null}
 
-          <IdentityCard identite={identite} />
-
-          <CompliancePanel compliance={compliance} onFocusField={focusField} />
+          <IdentityCard identite={identite} onSaveTiers={saveTiers} />
 
           <div className="legend">
             <h2>Données financières extraites</h2>
@@ -589,58 +578,111 @@ export default function DossierDetail({ onDossierChanged }) {
               <LegendKey label="Incohérence / non lu" bg="var(--bad-soft)" border="var(--bad)" />
               <LegendKey label="Calculé — verrouillé" bg="#F1F5F9" border="#CBD5E1" />
             </div>
-            <span className="legend-note">
-              {`${pluralize(dossier.overrides.length, "poste")} contrôlé(s) · 20 postes RCC`}
-            </span>
           </div>
 
-          <FieldGroups
-            fields={dossier.result?.fields ?? []}
-            overrides={overrides}
-            activeCode={activeCode}
-            savingCodes={savingCodes}
-            targetCode={targetCode}
-            onEdit={onEdit}
-            onCommit={onCommit}
-            onVerify={onVerify}
-            onFocusField={focusField}
-            registerRow={registerRow}
-          />
+          {/* Conteneur des 4 groupes : 2 colonnes quand le document est replié sur grand écran. */}
+          <div className="field-groups">
+            <FieldGroups
+              fields={dossier.result?.fields ?? []}
+              overrides={overrides}
+              activeCode={activeCode}
+              savingCodes={savingCodes}
+              targetCode={targetCode}
+              onEdit={onEdit}
+              onCommit={onCommit}
+              onVerify={onVerify}
+              onFocusField={focusField}
+              registerRow={registerRow}
+            />
+          </div>
 
+          {/* Masqué à la demande du métier (détail technique) — réactivable en décommentant.
           <ControlsPanel controls={dossier.result?.controls ?? []} />
+          */}
 
           <ScoringPanel scoring={dossier.result?.scoring} />
 
+          {/* Masqué à la demande du métier (journal technique) — réactivable en décommentant.
           <ExtractionWarnings warnings={dossier.result?.warnings ?? []} />
+          */}
+
+          {/* Masqué à la demande du métier (synthèse de l'analyse) — réactivable en décommentant.
+          <DossierSnapshot
+            dossier={dossier}
+            compliance={compliance}
+            populatedFields={populatedFields}
+            averageConfidence={averageConfidence}
+            controlsPassed={controlsPassed}
+          />
+          */}
+
+          <CompliancePanel compliance={compliance} onFocusField={focusField} />
+        </div>
+
+        <footer className="detail-actionbar" aria-label="Actions sur le dossier">
+          <span
+            className={`detail-actionbar-state ${
+              dossier.status === "validated" || compliance.can_validate ? "conf-ok" : "conf-bad"
+            }`}
+          >
+            {dossier.status === "validated"
+              ? "Dossier validé"
+              : compliance.can_validate
+                ? "Toutes les règles de conformité sont satisfaites"
+                : `${pluralize(compliance.blockers, "règle")} de conformité non ${compliance.blockers > 1 ? "satisfaites" : "satisfaite"}`}
+          </span>
+
+          <div className="detail-actions">
+            <button type="button" className="btn btn-ghost" disabled={Boolean(busyExport)} onClick={() => onExport("json")}>
+              <Icon paths={ICONS.file} size={14} width={1.9} />
+              {busyExport === "json" ? "Génération…" : "Exporter JSON"}
+            </button>
+            <button
+              type="button"
+              className={`btn btn-ghost hint${busyBilan ? " is-busy" : ""}`}
+              disabled={busyBilan || !dossier.has_document || !identite.tiers}
+              data-hint={
+                !dossier.has_document
+                  ? "Rattachez d'abord la liasse du dossier"
+                  : identite.tiers
+                    ? `Envoyer le bilan vers Ekip (n° tiers ${identite.tiers})`
+                    : "Renseignez le n° tiers dans le bloc « Référentiel clients »"
+              }
+              onClick={onPushBilan}
+            >
+              <Icon paths={ICONS.upload} size={14} width={1.9} />
+              <span className="btn-label">
+                {busyBilan
+                  ? "Envoi…"
+                  : dossier.bilans_push?.status === "sent"
+                    ? "Renvoyer Ekip"
+                    : "Envoyer Ekip"}
+              </span>
+              <span className="btn-spinner" aria-hidden="true" />
+            </button>
+            {/* Masqué à la demande du métier — réactivable en décommentant.
+            <button
+              type="button"
+              className={`btn ${compliance.can_validate ? "btn-ok" : "btn-ghost"} hint${busyAction === "validate" ? " is-busy" : ""}`}
+              disabled={!compliance.can_validate || dossier.status === "validated" || busyAction === "validate"}
+              data-hint={
+                dossier.status === "validated"
+                  ? "Ce dossier est déjà validé"
+                  : compliance.can_validate
+                    ? "Transmettre les postes RCC au modèle EKIP"
+                    : `${pluralize(compliance.blockers, "règle")} de conformité bloquante(s) à lever avant validation`
+              }
+              onClick={onValidate}
+            >
+              <Icon paths={ICONS.check} size={14} width={2.4} />
+              <span className="btn-label">Valider le dossier</span>
+              <span className="btn-spinner" aria-hidden="true" />
+            </button>
+            */}
+          </div>
+        </footer>
         </div>
       </div>
-
-      <RejectModal
-        open={modal === "reject"}
-        dossier={dossier}
-        onClose={() => setModal(null)}
-        onConfirm={async ({ motif, comment }) => {
-          const updated = await patchDossier(
-            { status: "rejected", motif, comment },
-            { successTitle: "Dossier rejeté", successText: `${dossier.id} retourne au gestionnaire.` }
-          );
-          if (updated) navigate("/dossiers");
-          return Boolean(updated);
-        }}
-      />
-
-      <EscalateModal
-        open={modal === "escalate"}
-        compliance={compliance}
-        onClose={() => setModal(null)}
-        onConfirm={async ({ comment }) => {
-          const updated = await patchDossier(
-            { status: "escalated", motif: "Arbitrage superviseur demandé", comment },
-            { successTitle: "Arbitrage demandé", successText: `${dossier.id} sort de votre file.` }
-          );
-          return Boolean(updated);
-        }}
-      />
 
       <ValidatedModal
         open={modal === "validated"}
@@ -650,6 +692,27 @@ export default function DossierDetail({ onDossierChanged }) {
       />
     </section>
   );
+}
+
+/** Donnée de l'en-tête : libellé en petites majuscules, valeur en gras ; « non détecté » si vide. */
+function HeadFact({ label, value, mono = false, tone = null }) {
+  const missing = !value;
+  const className = ["head-fact", missing ? "is-missing" : null, tone ? `is-${tone}` : null]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <span className={className}>
+      <small>{label}</small>
+      <b className={mono && !missing ? "mono" : undefined}>{missing ? "non détecté" : value}</b>
+    </span>
+  );
+}
+
+function exercisePeriod(identite, dossier) {
+  const start = identite.period_start;
+  const end = identite.period_end || (dossier.exercice_date ? formatDate(dossier.exercice_date) : null);
+  if (!start && !end) return null;
+  return `${start || "—"} → ${end || "—"}`;
 }
 
 function LegendKey({ label, bg, border }) {
@@ -713,18 +776,27 @@ function DossierSnapshot({ dossier, compliance, populatedFields, averageConfiden
     image_only: "Document scanné",
   };
 
+  const summary = [
+    `${populatedFields}/20 postes`,
+    `confiance OCR ${averageConfidence} %`,
+    controlsTotal ? `${controlsPassed}/${controlsTotal} contrôles` : "aucun contrôle",
+    compliance.can_validate ? "prêt à transmettre" : `${compliance.blockers} bloquant(s)`,
+  ].join(" · ");
+
+  // Accordéon fermé par défaut, en bas de page, au design du panneau « Conformité RCC ».
   return (
-    <section className="analysis-overview" aria-label="Synthèse de l'analyse RCC">
-      <div className="analysis-overview-head">
+    <details className="panel panel-pad comp-accordion analysis-accordion" aria-label="Synthèse de l'analyse RCC">
+      <summary className="comp-head">
         <div>
-          <span className="analysis-kicker">Synthèse de l'analyse</span>
-          <h2>Qualité et exploitabilité du dossier</h2>
+          <h2 className="comp-title">Synthèse de l'analyse</h2>
+          <p className="comp-sub">{summary}</p>
         </div>
         <div className="engine-tags" aria-label="Pipeline d'extraction utilisé">
           <span>{sourceLabels[extraction?.source_kind] || "Source non qualifiée"}</span>
           {(extraction?.engines || []).map((engine) => <span key={engine}>{engine}</span>)}
         </div>
-      </div>
+        <span className="comp-chevron" aria-hidden="true" />
+      </summary>
       <div className="analysis-metrics">
         <article>
           <small>Postes RCC renseignés</small>
@@ -752,7 +824,7 @@ function DossierSnapshot({ dossier, compliance, populatedFields, averageConfiden
           <p>{scoring ? "calculables" : "non disponibles"}</p>
         </article>
       </div>
-    </section>
+    </details>
   );
 }
 
@@ -792,36 +864,27 @@ function ScoringPanel({ scoring }) {
   );
 }
 
-function IdentityCard({ identite }) {
+function IdentityCard({ identite, onSaveTiers }) {
   const activite = String(identite.activite || "").trim();
   const activiteClean = /^raison sociale\b/i.test(activite) ? "" : activite;
-  const lookup = identite.client_lookup || null;
-  const matches = Array.isArray(identite.matched_clients)
-    ? identite.matched_clients
-    : lookup?.matches || [];
+  // Raison sociale, exercice, N° tiers, ICE, IF et TP sont dans l'en-tête, toujours
+  // visible : ce bloc ne reprend que les informations complémentaires.
   const rows = [
-    ["Raison sociale", identite.raison_sociale],
-    ["N° tiers", identite.tiers],
-    ["Identifiant fiscal", identite.identifiant_fiscal],
-    ["ICE", identite.ice],
-    ["Taxe professionnelle", identite.taxe_professionnelle],
     ["RC", identite.rc],
     ["Activité", activiteClean],
     ["Secteur", identite.secteur],
     ["Adresse", identite.adresse],
     ["Ville", identite.ville],
-    ["Début d'exercice", identite.period_start],
-    ["Fin d'exercice", identite.period_end],
     ["Date de déclaration", identite.declaration_date],
     ["Heure de déclaration", identite.declaration_time],
     ["Référence", identite.reference],
   ];
 
   return (
-    <section className="panel panel-pad identity-card" aria-label="Identité de l'entreprise">
+    <section className="panel panel-pad identity-card" aria-label="Informations complémentaires de l'entreprise">
       <div className="identity-card-head">
         <span className="analysis-kicker">Identité extraite</span>
-        <h2>Entreprise et exercice</h2>
+        <h2>Informations complémentaires</h2>
       </div>
       <dl className="identity-grid">
         {rows.map(([label, value]) => (
@@ -832,38 +895,7 @@ function IdentityCard({ identite }) {
         ))}
       </dl>
 
-      {lookup ? (
-        <div className="client-lookup-block" aria-label="Rapprochement client Wafabail">
-          <div className="client-lookup-head">
-            <span className="analysis-kicker">Référentiel clients</span>
-            <strong>
-              {lookup.status === "MATCHED"
-                ? "Client trouvé"
-                : lookup.status === "MULTIPLE"
-                  ? "Plusieurs correspondances"
-                  : lookup.status === "NOT_FOUND"
-                    ? "Aucun client"
-                    : lookup.status === "ERROR"
-                      ? "API indisponible"
-                      : "Non recherché"}
-            </strong>
-          </div>
-          {lookup.message ? <p className="client-lookup-msg">{lookup.message}</p> : null}
-          {matches.length > 1 ? (
-            <ul className="client-lookup-list">
-              {matches.slice(0, 5).map((item, index) => (
-                <li key={`${item.tiers || item.ice || index}`}>
-                  <b>{item.tiers || "—"}</b>
-                  {" · "}
-                  {item.raison_sociale || "Sans raison sociale"}
-                  {item.ice ? ` · ICE ${item.ice}` : ""}
-                  {item.rc ? ` · RC ${item.rc}` : ""}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
+      <ClientLookup identite={identite} onSaveTiers={onSaveTiers} />
     </section>
   );
 }

@@ -1,4 +1,8 @@
-/* Panneau « Conformité RCC » — restitution du calcul serveur, sans recalcul. */
+/*
+ * Panneau « Conformité RCC » — restitution du calcul serveur, sans recalcul.
+ * Accordéon fermé par défaut : l'en-tête garde le score et le nombre de règles
+ * bloquantes, le détail des règles s'ouvre à la demande.
+ */
 
 const SEVERITY_COLOR = {
   blocked: "var(--bad-text)",
@@ -14,8 +18,8 @@ export default function CompliancePanel({ compliance, onFocusField }) {
       : "var(--ok-text)";
 
   return (
-    <div className="panel panel-pad" style={{ marginBottom: 14 }}>
-      <div className="comp-head">
+    <details className="panel panel-pad comp-accordion">
+      <summary className="comp-head">
         <div>
           <h2 className="comp-title">Conformité RCC du dossier</h2>
           <p className="comp-sub">{compliance.summary}</p>
@@ -26,7 +30,8 @@ export default function CompliancePanel({ compliance, onFocusField }) {
             {`${compliance.rules_ok}/${compliance.rules_total} règles conformes`}
           </div>
         </div>
-      </div>
+        <span className="comp-chevron" aria-hidden="true" />
+      </summary>
 
       {compliance.sections.map((section) => (
         <div className="comp-section" key={section.title}>
@@ -78,6 +83,6 @@ export default function CompliancePanel({ compliance, onFocusField }) {
           })}
         </div>
       ))}
-    </div>
+    </details>
   );
 }

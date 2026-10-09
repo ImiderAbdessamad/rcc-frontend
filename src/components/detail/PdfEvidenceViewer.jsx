@@ -1,6 +1,6 @@
 /* Lecteur PDF contrôlé : navigation page par page et surlignage des preuves OCR. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import * as api from "../../lib/api.js";
@@ -16,6 +16,59 @@ function terms(evidence) {
     ? [evidence.raw_value]
     : [evidence.raw_label, evidence.raw_value];
   return values.map(fold).filter((term) => term.length >= 3);
+}
+
+const compactDigits = (text) => text.replace(/[\s.,  ]/g, "");
+
+/** Zoom relatif à la largeur du panneau (1 = page ajustée à la largeur). */
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.25;
+const clampZoom = (value) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value / ZOOM_STEP) * ZOOM_STEP));
+
+/** Marge autour de la cellule mesurée, pour que le cadre ne masque pas les chiffres. */
+const TARGET_PADDING = 3;
+
+/**
+ * Rectangle (en pixels du lecteur) de la cellule mesurée par le moteur d'extraction :
+ * proportion de page pour un scan, points PDF pour un PDF natif. null si inconnue.
+ */
+function measuredRect(source, page, viewport) {
+  let left; let top; let width; let height;
+  if (Array.isArray(source.bbox_relative) && source.bbox_relative.length === 4) {
+    const [x0, y0, x1, y1] = source.bbox_relative;
+    left = x0 * viewport.width; top = y0 * viewport.height;
+    width = (x1 - x0) * viewport.width; height = (y1 - y0) * viewport.height;
+  } else if (source.coordinate_space === "pdf_points_unrotated" && Array.isArray(source.bbox) && source.bbox.length === 4) {
+    // Points comptés depuis le coin haut-gauche de la page ; pdf.js part du coin bas-gauche.
+    const [viewX0, , , viewY1] = page.view;
+    const [x0, y0, x1, y1] = source.bbox;
+    const [a, b, c, d] = viewport.convertToViewportRectangle([viewX0 + x0, viewY1 - y1, viewX0 + x1, viewY1 - y0]);
+    left = Math.min(a, c); top = Math.min(b, d); width = Math.abs(c - a); height = Math.abs(d - b);
+  } else {
+    return null;
+  }
+  if (!(width > 0 && height > 0)) return null;
+  return {
+    left: left - TARGET_PADDING,
+    top: top - TARGET_PADDING,
+    width: width + TARGET_PADDING * 2,
+    height: height + TARGET_PADDING * 2,
+  };
+}
+
+/**
+ * Proximité d'un morceau de texte du PDF avec la valeur lue d'un poste, pour
+ * désigner la cible du bouton « Voir » : 3 = identique, 2 = la contient,
+ * 1 = en est un fragment, 0 = aucun rapport (libellé, autre poste…).
+ */
+function valueScore(text, evidence) {
+  const term = fold(evidence.raw_value);
+  if (!term || !text) return 0;
+  if (text === term || compactDigits(text) === compactDigits(term)) return 3;
+  if (text.includes(term)) return 2;
+  if (term.includes(text) && text.length >= 3) return 1;
+  return 0;
 }
 
 function evidenceTone(evidence) {
@@ -42,7 +95,7 @@ function openBlob(blob) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-export default function PdfEvidenceViewer({ dossierId, filename, fields, documentEvidence = [], activeCode, activeEvidencePage, onFocusField }) {
+export default function PdfEvidenceViewer({ dossierId, filename, fields, documentEvidence = [], activeCode, activeEvidencePage, focusTick = 0, onFocusField }) {
   const canvasRef = useRef(null);
   const hostRef = useRef(null);
   const pdfRef = useRef(null);
@@ -56,9 +109,34 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
   const [highlightWarning, setHighlightWarning] = useState(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [fileBlob, setFileBlob] = useState(null);
-  const [showEvidence, setShowEvidence] = useState(true);
-  const [importantCodes, setImportantCodes] = useState(() => new Set());
   const [rectangles, setRectangles] = useState([]);
+  // Zone désignée par « Voir » : centrée à l'écran et colorée.
+  const [targetKey, setTargetKey] = useState(null);
+  const [targetMissing, setTargetMissing] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  // Après un changement de zoom, la valeur ciblée est recentrée une fois la page redessinée.
+  const recenterAfterZoom = useRef(false);
+
+  const changeZoom = (next) => {
+    setZoom((current) => {
+      const value = clampZoom(typeof next === "function" ? next(current) : next);
+      if (value !== current) recenterAfterZoom.current = true;
+      return value;
+    });
+  };
+
+  // Ctrl + molette sur le document : zoom, sans zoomer toute la page du navigateur.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+    const onWheel = (event) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      changeZoom((current) => current + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+    };
+    host.addEventListener("wheel", onWheel, { passive: false });
+    return () => host.removeEventListener("wheel", onWheel);
+  }, []);
 
   const evidence = useMemo(() => [
     ...(fields || []).flatMap((field) =>
@@ -143,7 +221,7 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
         renderRef.current?.cancel();
         const page = await pdf.getPage(pageNumber);
         const baseViewport = page.getViewport({ scale: 1 });
-        const viewport = page.getViewport({ scale: pageWidth / baseViewport.width });
+        const viewport = page.getViewport({ scale: (pageWidth / baseViewport.width) * zoom });
         const ratio = window.devicePixelRatio || 1;
         const context = canvas.getContext("2d", { alpha: false });
         canvas.width = Math.floor(viewport.width * ratio); canvas.height = Math.floor(viewport.height * ratio);
@@ -152,11 +230,36 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
         renderRef.current = task; await task.promise;
         if (cancelled) return;
 
-        // La couche texte sert uniquement au surlignage. Certains PDF scannés ou
-        // navigateurs anciens ne savent pas l'extraire : le document doit rester visible.
+        const onPage = evidence.filter((item) => item.page_number == null || item.page_number === pageNumber);
+
+        // 1) Cellules mesurées par le moteur d'extraction : position exacte, y compris
+        //    sur un PDF scanné. Elles priment sur la recherche dans la couche texte.
+        const measured = [];
+        for (const source of onPage) {
+          if (source.kind) continue;
+          const rect = measuredRect(source, page, viewport);
+          if (!rect) continue;
+          measured.push({
+            key: `cell-${source.code}-${source.period || "current"}`,
+            ...rect,
+            codes: [source.code],
+            valueScores: { [source.code]: source.period === "previous" ? 4 : 5 },
+            label: source.label,
+            rawValue: source.raw_value,
+            confidence: source.confidence,
+            tone: evidenceTone(source),
+            missing: source.status === "missing" || source.raw_value == null,
+            kind: source.kind,
+            focusable: source.focusable !== false,
+          });
+        }
+        const measuredCodes = new Set(measured.map((rect) => rect.codes[0]));
+
+        // 2) Repli : recherche du libellé et de la valeur dans la couche texte (PDF natifs
+        //    sans mesure). Certains PDF scannés ou navigateurs anciens ne savent pas
+        //    l'extraire : le document doit rester visible.
         try {
           const text = await page.getTextContent();
-          const onPage = evidence.filter((item) => item.page_number == null || item.page_number === pageNumber);
           const found = [];
           const seenDocumentCodes = new Set();
           for (const item of text.items || []) {
@@ -177,6 +280,7 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
               width: Math.max(12, item.width * viewport.scale),
               height,
               codes: matches.map((match) => match.code),
+              valueScores: Object.fromEntries(matches.map((match) => [match.code, valueScore(value, match)])),
               label: matches[0].label,
               rawValue: matches[0].raw_value,
               confidence: matches[0].confidence,
@@ -189,11 +293,15 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
               if (match.kind) seenDocumentCodes.add(match.code);
             }
           }
-          if (!cancelled) setRectangles(found);
+          // Un poste mesuré n'a pas besoin des approximations de la couche texte.
+          const textOnly = found.filter((rect) => !rect.codes.every((code) => measuredCodes.has(code)));
+          if (!cancelled) setRectangles([...textOnly, ...measured]);
         } catch {
           if (!cancelled) {
-            setRectangles([]);
-            setHighlightWarning("Le document reste consultable, mais le surlignage automatique n'est pas disponible sur cette page.");
+            setRectangles(measured);
+            if (!measured.length) {
+              setHighlightWarning("Le document reste consultable, mais le surlignage automatique n'est pas disponible sur cette page.");
+            }
           }
         }
       } catch (reason) {
@@ -207,23 +315,68 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
     }
     render();
     return () => { cancelled = true; };
-  }, [evidence, pageNumber, pageWidth, status]);
+  }, [evidence, pageNumber, pageWidth, zoom, status]);
 
-  const toggleImportant = useCallback(() => {
-    if (!activeCode) return;
-    setImportantCodes((current) => { const next = new Set(current); next.has(activeCode) ? next.delete(activeCode) : next.add(activeCode); return next; });
-  }, [activeCode]);
-  const activeIsImportant = activeCode && importantCodes.has(activeCode);
+  // Cible du « Voir » : parmi les zones du poste actif, celle qui ressemble le plus à
+  // sa valeur (plutôt qu'à son libellé). Recalculée à chaque rendu de page et à chaque clic.
+  useEffect(() => {
+    if (status !== "ready" || rendering || !activeCode) {
+      if (!activeCode) { setTargetKey(null); setTargetMissing(false); }
+      return;
+    }
+    const candidates = rectangles.filter((rect) => rect.codes.includes(activeCode));
+    if (!candidates.length) {
+      setTargetKey(null);
+      // La valeur devrait être sur cette page mais n'y est pas repérable (document scanné…).
+      setTargetMissing(Boolean(focusTick) && selectedEvidence?.page_number === pageNumber);
+      return;
+    }
+    const best = candidates.reduce((winner, rect) => {
+      const score = rect.valueScores?.[activeCode] ?? 0;
+      const winnerScore = winner.valueScores?.[activeCode] ?? 0;
+      return score > winnerScore ? rect : winner;
+    });
+    setTargetKey(best.key);
+    setTargetMissing(false);
+  }, [rectangles, rendering, status, activeCode, focusTick, pageNumber, selectedEvidence]);
+
+  // Centre la cible dans la zone de lecture, à chaque nouveau clic sur « Voir ».
+  useEffect(() => {
+    if (!targetKey || !focusTick) return;
+    const node = hostRef.current?.querySelector(`[data-target-key="${CSS.escape(targetKey)}"]`);
+    node?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  }, [targetKey, focusTick]);
+
+  // Après un zoom, la page redessinée garde la valeur ciblée au centre.
+  useEffect(() => {
+    if (!recenterAfterZoom.current || rendering) return;
+    recenterAfterZoom.current = false;
+    if (!targetKey) return;
+    const node = hostRef.current?.querySelector(`[data-target-key="${CSS.escape(targetKey)}"]`);
+    node?.scrollIntoView({ block: "center", inline: "center" });
+  }, [rectangles, rendering, targetKey]);
 
   return <div className="pdf-viewer">
     <div className="viewer-toolbar">
       <span className="viewer-file" title={filename}>{filename || "Liasse"}</span>
       <span className="viewer-page-count" aria-live="polite">{pageCount ? `Page ${pageNumber} / ${pageCount}` : "Chargement du document…"}</span>
-      <span style={{ flex: 1 }} />
-      <button type="button" className={`btn btn-ghost btn-sm${showEvidence ? " is-selected" : ""}`} onClick={() => setShowEvidence((value) => !value)}><Icon paths={ICONS.highlight} size={13} width={2} />{showEvidence ? "Masquer les preuves" : "Afficher les preuves"}</button>
-      <button type="button" className="btn btn-soft btn-sm" disabled={!activeCode} onClick={toggleImportant}><Icon paths={ICONS.highlight} size={13} width={2} />{activeIsImportant ? "Retirer l'important" : "Marquer important"}</button>
-      <button type="button" className="btn btn-ghost btn-sm" disabled={!fileBlob} onClick={() => openBlob(fileBlob)}>Ouvrir</button>
+      <div className="viewer-zoom" role="group" aria-label="Zoom du document">
+        <button type="button" className="btn btn-ghost btn-sm btn-icon" aria-label="Dézoomer" title="Dézoomer (Ctrl + molette)" disabled={zoom <= ZOOM_MIN} onClick={() => changeZoom((current) => current - ZOOM_STEP)}>
+          <Icon paths={ICONS.minus} size={14} width={2.2} />
+        </button>
+        <button type="button" className="viewer-zoom-value" title="Revenir à la largeur du panneau" aria-label={`Zoom ${Math.round(zoom * 100)} %, revenir à la largeur du panneau`} onClick={() => changeZoom(1)}>
+          {`${Math.round(zoom * 100)} %`}
+        </button>
+        <button type="button" className="btn btn-ghost btn-sm btn-icon" aria-label="Zoomer" title="Zoomer (Ctrl + molette)" disabled={zoom >= ZOOM_MAX} onClick={() => changeZoom((current) => current + ZOOM_STEP)}>
+          <Icon paths={ICONS.plus} size={14} width={2.2} />
+        </button>
+      </div>
     </div>
+    {targetMissing ? (
+      <p className="pdf-target-missing" role="status">
+        {`La valeur se trouve sur cette page (page ${pageNumber}), mais sa position exacte n'est pas repérable automatiquement (document scanné ou texte non lisible).`}
+      </p>
+    ) : null}
     <div className="pdf-canvas-scroll pane-scroll" ref={hostRef}>
       <div className="pdf-stage">
         {status === "loading" ? <div className="pdf-status"><span className="pdf-loader" aria-hidden="true" />Préparation du document…</div> : null}
@@ -241,13 +394,15 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
         ) : null}
         <div className="pdf-page" hidden={status !== "ready"} aria-busy={rendering}><canvas ref={canvasRef} />
           {rendering ? <div className="pdf-rendering"><span className="pdf-loader" aria-hidden="true" />Rendu de la page…</div> : null}
-          {showEvidence ? <div className="pdf-highlights" aria-label="Preuves OCR surlignées">{rectangles.map((rect) => {
-            const active = rect.codes.includes(activeCode); const important = rect.codes.some((code) => importantCodes.has(code));
+          <div className="pdf-highlights" aria-label="Preuves OCR surlignées">{rectangles.map((rect) => {
+            const active = rect.codes.includes(activeCode);
+            const target = rect.key === targetKey;
             const state = evidenceState(rect.tone, rect.confidence, rect.missing);
             const ariaLabel = rect.focusable
               ? `Voir ${rect.label} dans le formulaire, ${state}`
               : `${rect.label}, ${rect.rawValue}, ${state}`;
-            return <button key={rect.key} type="button" className={`pdf-highlight is-${rect.tone}${active ? " is-active" : ""}${important ? " is-important" : ""}`} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} aria-label={ariaLabel} onClick={rect.focusable ? () => onFocusField(rect.codes[0], { openDoc: false, pageNumber }) : undefined}>
+            // La clé de la cible change à chaque « Voir » : l'animation de repérage rejoue.
+            return <button key={target ? `${rect.key}-${focusTick}` : rect.key} data-target-key={rect.key} type="button" className={`pdf-highlight is-${rect.tone}${active ? " is-active" : ""}${target ? " is-target" : ""}`} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} aria-label={ariaLabel} onClick={rect.focusable ? () => onFocusField(rect.codes[0], { openDoc: false, pageNumber }) : undefined}>
               <span className="pdf-hover-card" aria-hidden="true">
                 <span className="pdf-hover-card-head"><i />{state}</span>
                 <strong>{rect.label}</strong>
@@ -255,7 +410,7 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
                 <small>{rect.focusable ? "Cliquer pour ouvrir dans le formulaire" : "Année de référence du document"}</small>
               </span>
             </button>;
-          })}</div> : null}
+          })}</div>
         </div>
         {status === "ready" && highlightWarning ? <p className="pdf-inline-warning">{highlightWarning}</p> : null}
       </div>

@@ -22,16 +22,20 @@ export default function ViewerPane({
   onTabChange,
   activeCode,
   activeEvidencePage,
+  focusTick,
   onFocusField,
   onAttached,
 }) {
   const hasDocument = dossier.has_document;
-  const effectiveTab = hasDocument ? tab : "import";
+  // « Pièces & import » ne sert qu'à rattacher une liasse : l'onglet n'existe
+  // que pour les dossiers qui n'en ont pas encore.
+  const tabs = hasDocument ? TABS.filter((item) => item.key !== "import") : TABS;
+  const effectiveTab = !hasDocument ? "import" : tab === "import" ? "doc" : tab;
 
   return (
     <div className="split-viewer">
       <div className="pane-tabs" role="tablist" aria-label="Pièces du dossier">
-        {TABS.map((item) => {
+        {tabs.map((item) => {
           const disabled = item.key !== "import" && !hasDocument;
           return (
             <button
@@ -55,7 +59,7 @@ export default function ViewerPane({
 
       <div className="pane-body is-entering" role="tabpanel" key={effectiveTab}>
         {effectiveTab === "doc" ? (
-          <DocumentTab dossier={dossier} activeCode={activeCode} activeEvidencePage={activeEvidencePage} onFocusField={onFocusField} />
+          <DocumentTab dossier={dossier} activeCode={activeCode} activeEvidencePage={activeEvidencePage} focusTick={focusTick} onFocusField={onFocusField} />
         ) : effectiveTab === "zones" ? (
           <ZonesTab dossier={dossier} activeCode={activeCode} onFocusField={onFocusField} />
         ) : (
@@ -68,7 +72,7 @@ export default function ViewerPane({
 
 /* --------------------------------------------------------------- document --- */
 
-function DocumentTab({ dossier, activeCode, activeEvidencePage, onFocusField }) {
+function DocumentTab({ dossier, activeCode, activeEvidencePage, focusTick, onFocusField }) {
   const exercise = dossier.result?.document?.exercise;
   const filename = dossier.filename || dossier.id;
   const filenameFullYear = filename.match(/\b(?:19|20)\d{2}\b/)?.[0];
@@ -101,6 +105,7 @@ function DocumentTab({ dossier, activeCode, activeEvidencePage, onFocusField }) 
           documentEvidence={documentEvidence}
           activeCode={activeCode}
           activeEvidencePage={activeEvidencePage}
+          focusTick={focusTick}
           onFocusField={onFocusField}
         />
       </Suspense>

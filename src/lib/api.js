@@ -136,6 +136,12 @@ export const dossiers = {
     request(`/rcc/dossiers/${encodeURIComponent(id)}`, { method: "PATCH", body: payload }),
   remove: (id) =>
     request(`/rcc/dossiers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** N° tiers choisi parmi les clients du référentiel (`selected`) ou saisi (`manual`). */
+  setTiers: (id, { tiers, source }) =>
+    request(`/rcc/dossiers/${encodeURIComponent(id)}/tiers`, {
+      method: "PUT",
+      body: { tiers, source },
+    }),
   saveOverrides: (id, overrides) =>
     request(`/rcc/dossiers/${encodeURIComponent(id)}/overrides`, {
       method: "PUT",

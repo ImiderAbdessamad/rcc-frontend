@@ -196,11 +196,3 @@ export const STATUS_META = {
   rejected: { label: "Rejeté", cls: "badge-bad" },
   escalated: { label: "Arbitrage demandé", cls: "badge-dark" },
 };
-
-export const REJECT_MOTIFS = [
-  "Bilan non signé ou non certifié",
-  "Incohérence comptable non résolue",
-  "Document illisible / OCR non exploitable",
-  "Exercice non clos ou hors périmètre",
-  "Autre motif (à préciser)",
-];
