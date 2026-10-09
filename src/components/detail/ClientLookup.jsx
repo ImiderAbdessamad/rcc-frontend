@@ -15,6 +15,8 @@ export default function ClientLookup({ identite, onSaveTiers, onRefresh }) {
   const status = lookup?.status || null;
   const matches = lookup?.matches || identite.matched_clients || [];
   const tiers = identite.tiers || null;
+  // N° tiers déjà saisi (aucun client, API indisponible) : la recherche n'a plus d'utilité.
+  const searchPending = RETRYABLE.has(status) && !tiers;
   const [refreshing, setRefreshing] = useState(false);
 
   async function refresh() {
@@ -29,7 +31,7 @@ export default function ClientLookup({ identite, onSaveTiers, onRefresh }) {
       <div className="client-lookup-head">
         <span className="analysis-kicker">Référentiel clients</span>
         <span className="client-lookup-status">
-          {onRefresh && RETRYABLE.has(status) ? (
+          {onRefresh && searchPending ? (
             <button
               type="button"
               className={`btn btn-ghost btn-sm${refreshing ? " is-busy" : ""}`}
@@ -53,7 +55,7 @@ export default function ClientLookup({ identite, onSaveTiers, onRefresh }) {
         />
       ) : (
         <>
-          {lookup?.message ? <p className="client-lookup-msg">{lookup.message}</p> : null}
+          {searchPending && lookup?.message ? <p className="client-lookup-msg">{lookup.message}</p> : null}
           <ManualTiers tiers={tiers} onSaveTiers={onSaveTiers} />
         </>
       )}
