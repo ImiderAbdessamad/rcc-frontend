@@ -1,10 +1,12 @@
-/* Coque applicative : rail latéral, barre d'onglets mobile, menu utilisateur. */
+/* Coque applicative (charte Vitrine digitale Wafabail) : menu vertical sombre
+   avec logo, contenu clair, barre d'onglets mobile. */
 
-import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import Icon, { ICONS } from "./Icon.jsx";
 import { initials } from "../lib/format.js";
 import { useSession } from "../hooks/useSession.jsx";
+import logoBlanc from "../assets/wafabail-logo-blanc.svg";
+import heroChevron from "../assets/hero-chevron.svg";
 
 const NAV = [
   { to: "/dossiers", key: "list", label: "Dossiers", tip: "Dossiers RCC", icon: ICONS.folder },
@@ -18,31 +20,6 @@ export default function AppShell({ lastDossierId, children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
-  const buttonRef = useRef(null);
-
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const onClick = (event) => {
-      if (!menuRef.current?.contains(event.target) && !buttonRef.current?.contains(event.target)) {
-        setMenuOpen(false);
-      }
-    };
-    const onKey = (event) => {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-    document.addEventListener("click", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("click", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
-
   const detailPath = lastDossierId ? `/validation/${encodeURIComponent(lastDossierId)}` : null;
   const isDetailActive = location.pathname.startsWith("/validation");
 
@@ -51,74 +28,65 @@ export default function AppShell({ lastDossierId, children }) {
   }
 
   function onNavClick(event, item) {
-    const target = navTarget(item);
-    if (!target) {
-      event.preventDefault();
-      return;
-    }
     event.preventDefault();
-    navigate(target);
+    const target = navTarget(item);
+    if (target) navigate(target);
   }
 
+  // Ferme la session Keycloak puis recharge l'application (retour sur la page de connexion).
   function onLogout() {
-    setMenuOpen(false);
-    // Ferme la session Keycloak puis recharge l'application (retour sur la page de connexion).
     logout();
   }
 
+  const userName = user?.display_name || "Session";
   const userInitials = user?.initials || initials(user?.display_name);
 
   return (
     <div className="app">
       <nav className="rail" aria-label="Navigation principale">
-        <div className="rail-logo" aria-hidden="true">W</div>
-        <div className="rail-sep" aria-hidden="true" />
+        <div className="rail-brand">
+          <img className="rail-logo" src={logoBlanc} alt="Wafabail" width="107" height="39" />
+        </div>
 
-        {NAV.map((item) => {
-          const target = navTarget(item);
-          const disabled = !target;
-          const active = item.key === "detail" ? isDetailActive : location.pathname.startsWith(item.to);
-          return (
-            <button
-              key={item.key}
-              type="button"
-              className="rail-btn"
-              disabled={disabled}
-              aria-current={active ? "page" : undefined}
-              onClick={(event) => onNavClick(event, item)}
-            >
-              <Icon paths={item.icon} size={18} width={1.8} />
-              <span className="rail-label">{item.label}</span>
-              <span className="rail-tip" role="tooltip">
-                {disabled ? "Ouvrez un dossier depuis la file" : item.tip}
-              </span>
-            </button>
-          );
-        })}
+        <div className="rail-nav">
+          {NAV.map((item) => {
+            const target = navTarget(item);
+            const disabled = !target;
+            const active = item.key === "detail" ? isDetailActive : location.pathname.startsWith(item.to);
+            return (
+              <button
+                key={item.key}
+                type="button"
+                className="rail-btn"
+                disabled={disabled}
+                aria-current={active ? "page" : undefined}
+                title={disabled ? "Ouvrez un dossier depuis la file" : undefined}
+                onClick={(event) => onNavClick(event, item)}
+              >
+                <Icon paths={item.icon} size={16} width={1.8} />
+                <span className="rail-label">{item.label}</span>
+                <span className="rail-tip" role="tooltip">
+                  {disabled ? "Ouvrez un dossier depuis la file" : item.tip}
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
-        <button
-          ref={buttonRef}
-          type="button"
-          className="rail-user"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          <span>{userInitials}</span>
-          <span className="rail-tip" role="tooltip">
-            {user ? `${user.display_name} — valideur RCC` : "Session"}
-          </span>
-        </button>
-
-        {menuOpen ? (
-          <div className="user-menu" role="menu" ref={menuRef}>
-            <p className="user-menu-name">{user?.display_name}</p>
-            <p className="user-menu-role">Valideur RCC</p>
-            <button type="button" role="menuitem" className="user-menu-item" onClick={onLogout}>
-              Se déconnecter
-            </button>
+        <div className="rail-foot">
+          <div className="rail-user">
+            <span className="rail-avatar" aria-hidden="true">{userInitials}</span>
+            <span className="rail-user-text">
+              <strong>{userName}</strong>
+              <small>Valideur RCC</small>
+            </span>
           </div>
-        ) : null}
+          <button type="button" className="rail-logout" onClick={onLogout}>
+            <Icon paths={ICONS.logout} size={15} width={1.8} />
+            <span className="rail-label">Déconnexion</span>
+            <span className="rail-tip" role="tooltip">Se déconnecter</span>
+          </button>
+        </div>
       </nav>
 
       <main className="main">{children}</main>
@@ -141,15 +109,24 @@ export default function AppShell({ lastDossierId, children }) {
             </button>
           );
         })}
+        <button type="button" className="tabbar-btn" onClick={onLogout}>
+          <Icon paths={ICONS.logout} size={18} width={1.8} />
+          Quitter
+        </button>
       </nav>
     </div>
   );
 }
 
-/** Barre de titre commune aux écrans pleine largeur. */
+/** Bandeau de titre (style Vitrine) commun aux écrans pleine largeur. */
 export function TopBar({ title, subtitle, children }) {
   return (
-    <header className="topbar">
+    <header className="topbar topbar-hero">
+      {/* Motif du logo repris de la maquette Figma (chevron + carré). */}
+      <span className="hero-mark" aria-hidden="true">
+        <span className="hero-mark-square" />
+        <img className="hero-mark-chevron" src={heroChevron} alt="" />
+      </span>
       <div className="topbar-title">
         <h1>{title}</h1>
         {subtitle ? <p>{subtitle}</p> : null}

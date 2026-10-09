@@ -1,4 +1,4 @@
-/* Écran « Validation RCC · bilans OCR » — file de validation. */
+/* Écran « Validation RCC » — file de validation. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -113,7 +113,7 @@ export default function DossierList({ activeId }) {
   return (
     <section className="view is-entering">
       <TopBar
-        title="Validation RCC · bilans OCR"
+        title="Validation RCC"
         subtitle="Bilans extraits par OCR en attente de contrôle humain avant enrichissement du modèle EKIP."
       />
 

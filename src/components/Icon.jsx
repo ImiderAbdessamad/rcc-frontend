@@ -21,6 +21,8 @@ export const ICONS = {
   search: ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.35-4.35"],
   plus: ["M12 5v14", "M5 12h14"],
   minus: ["M5 12h14"],
+  user: ["M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"],
+  logout: ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "m16 17 5-5-5-5", "M21 12H9"],
 };
 
 export default function Icon({ paths, size = 16, width = 2, className, style }) {
