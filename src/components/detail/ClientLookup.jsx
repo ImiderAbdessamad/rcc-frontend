@@ -7,13 +7,6 @@
 
 import { useEffect, useState } from "react";
 
-const STATUS_TITLES = {
-  MATCHED: "Client trouvé",
-  MULTIPLE: "Plusieurs correspondances",
-  NOT_FOUND: "Aucun client",
-  ERROR: "API indisponible",
-};
-
 // Recherche à relancer : échec de l'API, recherche non faite, ou aucun client trouvé.
 const RETRYABLE = new Set(["ERROR", "SKIPPED", "NOT_FOUND", null]);
 
@@ -36,7 +29,6 @@ export default function ClientLookup({ identite, onSaveTiers, onRefresh }) {
       <div className="client-lookup-head">
         <span className="analysis-kicker">Référentiel clients</span>
         <span className="client-lookup-status">
-          <strong>{STATUS_TITLES[status] || "Non recherché"}</strong>
           {onRefresh && RETRYABLE.has(status) ? (
             <button
               type="button"
