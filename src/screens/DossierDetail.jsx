@@ -339,6 +339,27 @@ export default function DossierDetail({ onDossierChanged }) {
     }
   }
 
+  /** Relance la recherche du client dans le référentiel ; le résultat remplace l'ancien. */
+  async function refreshClientLookup() {
+    try {
+      const payload = await api.dossiers.refreshClientLookup(dossierId);
+      setData(payload);
+      onDossierChanged?.(payload.dossier);
+      const lookup = payload.dossier?.identite?.client_lookup;
+      const status = lookup?.status;
+      toast(lookup?.message || "Recherche relancée.", {
+        title: status === "MATCHED" ? "Client trouvé"
+          : status === "MULTIPLE" ? "Plusieurs clients à départager"
+            : status === "ERROR" ? "API clients toujours indisponible"
+              : "Référentiel clients",
+        type: status === "MATCHED" || status === "MULTIPLE" ? "ok" : "warn",
+        timeout: 7000,
+      });
+    } catch (err) {
+      if (!err.isAuth) toast(err.message, { title: "Recherche impossible", type: "bad", timeout: 7000 });
+    }
+  }
+
   async function onPushBilan() {
     if (busyBilan) return;
     // N° tiers retenu par le backend : unique, choisi ou saisi dans le référentiel clients.
@@ -568,7 +589,7 @@ export default function DossierDetail({ onDossierChanged }) {
             </Banner>
           ) : null}
 
-          <IdentityCard identite={identite} onSaveTiers={saveTiers} />
+          <IdentityCard identite={identite} onSaveTiers={saveTiers} onRefreshLookup={refreshClientLookup} />
 
           <div className="legend">
             <h2>Données financières extraites</h2>
@@ -864,7 +885,7 @@ function ScoringPanel({ scoring }) {
   );
 }
 
-function IdentityCard({ identite, onSaveTiers }) {
+function IdentityCard({ identite, onSaveTiers, onRefreshLookup }) {
   const activite = String(identite.activite || "").trim();
   const activiteClean = /^raison sociale\b/i.test(activite) ? "" : activite;
   // Raison sociale, exercice, N° tiers, ICE, IF et TP sont dans l'en-tête, toujours
@@ -895,7 +916,7 @@ function IdentityCard({ identite, onSaveTiers }) {
         ))}
       </dl>
 
-      <ClientLookup identite={identite} onSaveTiers={onSaveTiers} />
+      <ClientLookup identite={identite} onSaveTiers={onSaveTiers} onRefresh={onRefreshLookup} />
     </section>
   );
 }

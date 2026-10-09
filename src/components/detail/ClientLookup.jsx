@@ -14,17 +14,41 @@ const STATUS_TITLES = {
   ERROR: "API indisponible",
 };
 
-export default function ClientLookup({ identite, onSaveTiers }) {
+// Recherche à relancer : échec de l'API, recherche non faite, ou aucun client trouvé.
+const RETRYABLE = new Set(["ERROR", "SKIPPED", "NOT_FOUND", null]);
+
+export default function ClientLookup({ identite, onSaveTiers, onRefresh }) {
   const lookup = identite.client_lookup || null;
   const status = lookup?.status || null;
   const matches = lookup?.matches || identite.matched_clients || [];
   const tiers = identite.tiers || null;
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    await onRefresh();
+    setRefreshing(false);
+  }
 
   return (
     <div className="client-lookup-block" aria-label="Rapprochement client Wafabail">
       <div className="client-lookup-head">
         <span className="analysis-kicker">Référentiel clients</span>
-        <strong>{STATUS_TITLES[status] || "Non recherché"}</strong>
+        <span className="client-lookup-status">
+          <strong>{STATUS_TITLES[status] || "Non recherché"}</strong>
+          {onRefresh && RETRYABLE.has(status) ? (
+            <button
+              type="button"
+              className={`btn btn-ghost btn-sm${refreshing ? " is-busy" : ""}`}
+              disabled={refreshing}
+              onClick={refresh}
+            >
+              <span className="btn-label">{refreshing ? "Recherche…" : "Relancer la recherche"}</span>
+              <span className="btn-spinner" aria-hidden="true" />
+            </button>
+          ) : null}
+        </span>
       </div>
 
       {status === "MATCHED" ? (

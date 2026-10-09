@@ -142,6 +142,9 @@ export const dossiers = {
       method: "PUT",
       body: { tiers, source },
     }),
+  /** Relance la recherche du client dans le référentiel (API IA indisponible à l'import…). */
+  refreshClientLookup: (id) =>
+    request(`/rcc/dossiers/${encodeURIComponent(id)}/client-lookup/refresh`, { method: "POST" }),
   saveOverrides: (id, overrides) =>
     request(`/rcc/dossiers/${encodeURIComponent(id)}/overrides`, {
       method: "PUT",
