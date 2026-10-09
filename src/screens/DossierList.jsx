@@ -106,8 +106,8 @@ export default function DossierList({ activeId }) {
   const filterLabel = FILTERS.find((f) => f.key === status)?.label ?? "";
 
   const stats = [
-    { status: "pending", label: "En attente de validation", value: counts.pending ?? 0, note: "dossiers", tone: "is-warn" },
-    { status: "validated", label: "Validés", value: counts.validated ?? 0, note: "transmis EKIP", tone: "is-ok" },
+    { status: "pending", label: "À valider", value: counts.pending ?? 0, note: "Dossiers extraits par l'OCR, à contrôler avant l'envoi vers EKIP." },
+    { status: "validated", label: "Validés", value: counts.validated ?? 0, note: "Dossiers contrôlés et transmis à EKIP." },
   ];
 
   return (
@@ -123,17 +123,20 @@ export default function DossierList({ activeId }) {
             {stats.map((card) => (
               <button
                 type="button"
-                className={`stat ${card.tone}${status === card.status ? " is-selected" : ""}`}
+                className={`stat${status === card.status ? " is-selected" : ""}`}
                 key={card.label}
                 aria-pressed={status === card.status}
+                aria-label={`${card.label} : ${card.value}`}
                 onClick={() => setStatus(card.status)}
               >
-                <p className="stat-label">{card.label}</p>
-                <div className="stat-row">
-                  <span className={`stat-value ${card.tone}`}>{card.value}</span>
-                  <span className="stat-note">{card.note}</span>
-                </div>
-                <span className="stat-link">Afficher la file</span>
+                <span className="stat-head">
+                  <span className="stat-label">{card.label}</span>
+                  <span className="stat-value" aria-hidden="true">{card.value}</span>
+                </span>
+                <span className="stat-note">{card.note}</span>
+                <span className="stat-link">
+                  Afficher la file <Icon paths={ICONS.chevronRight} size={14} width={2} />
+                </span>
               </button>
             ))}
           </div>

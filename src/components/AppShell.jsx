@@ -1,4 +1,4 @@
-/* Coque applicative (charte Vitrine digitale Wafabail) : menu vertical sombre
+/* Coque applicative (charte Wafabail) : menu vertical sombre
    avec logo, contenu clair, barre d'onglets mobile. */
 
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
@@ -118,21 +118,27 @@ export default function AppShell({ lastDossierId, children }) {
   );
 }
 
-/** Bandeau de titre (style Vitrine) commun aux écrans pleine largeur. */
+/** Bandeau de titre commun aux écrans pleine largeur. */
 export function TopBar({ title, subtitle, children }) {
   return (
     <header className="topbar topbar-hero">
-      {/* Motif du logo repris de la maquette Figma (chevron + carré). */}
-      <span className="hero-mark" aria-hidden="true">
-        <span className="hero-mark-square" />
-        <img className="hero-mark-chevron" src={heroChevron} alt="" />
-      </span>
+      <HeroMark />
       <div className="topbar-title">
         <h1>{title}</h1>
         {subtitle ? <p>{subtitle}</p> : null}
       </div>
       {children ? <div className="topbar-actions">{children}</div> : null}
     </header>
+  );
+}
+
+/** Motif du logo (chevron + carré), en filigrane du bandeau. */
+export function HeroMark() {
+  return (
+    <span className="hero-mark" aria-hidden="true">
+      <span className="hero-mark-square" />
+      <img className="hero-mark-chevron" src={heroChevron} alt="" />
+    </span>
   );
 }
 

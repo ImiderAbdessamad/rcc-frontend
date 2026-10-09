@@ -6,6 +6,7 @@ import * as api from "../lib/api.js";
 import { STATUS_META } from "../lib/fields.js";
 import { formatAmount, formatCompletenessPct, formatDate, pluralize } from "../lib/format.js";
 import Icon, { ICONS } from "../components/Icon.jsx";
+import { HeroMark } from "../components/AppShell.jsx";
 import { Badge, ErrorState, SkeletonRows } from "../components/States.jsx";
 import Banner from "../components/detail/Banner.jsx";
 import CompliancePanel from "../components/detail/CompliancePanel.jsx";
@@ -408,7 +409,8 @@ export default function DossierDetail({ onDossierChanged }) {
   if (loading) {
     return (
       <section className="view view-detail is-entering">
-        <header className="topbar topbar-detail">
+        <header className="topbar topbar-detail topbar-hero">
+        <HeroMark />
           <div className="skeleton sk-title" style={{ width: 220 }} />
         </header>
         <div className="split">
@@ -430,7 +432,8 @@ export default function DossierDetail({ onDossierChanged }) {
   if (error || !data) {
     return (
       <section className="view view-detail is-entering">
-        <header className="topbar topbar-detail">
+        <header className="topbar topbar-detail topbar-hero">
+        <HeroMark />
           <button
             type="button"
             className="btn-icon detail-back"
@@ -469,7 +472,8 @@ export default function DossierDetail({ onDossierChanged }) {
 
   return (
     <section className="view view-detail is-entering">
-      <header className="topbar topbar-detail">
+      <header className="topbar topbar-detail topbar-hero">
+        <HeroMark />
         <button
           type="button"
           className="btn-icon detail-back"
@@ -660,7 +664,7 @@ export default function DossierDetail({ onDossierChanged }) {
             </button>
             <button
               type="button"
-              className={`btn btn-ghost hint${busyBilan ? " is-busy" : ""}`}
+              className={`btn btn-primary hint${busyBilan ? " is-busy" : ""}`}
               disabled={busyBilan || !dossier.has_document || !identite.tiers}
               data-hint={
                 !dossier.has_document

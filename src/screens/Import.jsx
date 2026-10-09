@@ -83,7 +83,7 @@ export default function Import({ onDossierCreated }) {
 
       <div className="scroll">
         <div className="wrap import-workspace">
-          {/* Parcours en étapes (maquette Vitrine « Demande de financement »). */}
+          {/* Parcours en étapes, mis à jour par l'extraction. */}
           <nav className="import-steps" aria-label="Parcours d’extraction">
             <ol>
               {/* Ligne reliant les étapes : verte seulement entre deux étapes terminées. */}

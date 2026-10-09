@@ -1,6 +1,5 @@
 /* =========================================================================
-   Validation RCC — charte des outils internes Wafabail
-   (Figma « WafaBail (Team) OFFICIEL », page Livrables / DEV / Gestion interne).
+   Validation RCC — charte graphique Wafabail.
    Les couleurs de TEXTE d'état restent plus sombres que les remplissages pour
    la lisibilité sur fond teinté. Voir --ok-text / --warn-text / --bad-text.
    ========================================================================= */
@@ -25,7 +24,7 @@
 :root {
   --accent: #FF9B26;          /* brand/primary-variant : boutons, actif, gros chiffres */
   --accent-text: #D9730D;     /* orange un peu plus soutenu pour le texte courant sur blanc */
-  --accent-btn: #FF9B26;      /* fond de bouton principal (texte blanc, comme la maquette) */
+  --accent-btn: #FF9B26;      /* fond de bouton principal (texte blanc) */
   --accent-btn-hover: #F08A12;
   --accent-soft: #FFF7ED;
   --accent-border: #FFD7A8;
@@ -303,7 +302,7 @@ a { color: var(--accent-text); text-decoration: none; }
 }
 
 /* ============================ Coque applicative ============================ */
-/* Charte Vitrine digitale Wafabail : menu vertical sombre avec logo,
+/* Charte Wafabail : menu vertical sombre avec logo,
    contenu clair, bandeau dégradé orange en tête d'écran. */
 .app { display: flex; height: 100vh; width: 100%; overflow: hidden; background: var(--bg); }
 
@@ -428,56 +427,48 @@ a { color: var(--accent-text); text-decoration: none; }
 .panel-head p { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
 
 /* ============================ Cartes de statistiques ============================ */
-/* Cartes compactes (300 px max), alignées à gauche ; empilées sur mobile. */
-.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 300px)); gap: 12px; margin-bottom: 18px; }
+/* Cartes de statistiques : titre et nombre de
+   dossiers sur la même ligne, accroche, lien. */
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 330px)); gap: 24px; margin-bottom: 24px; }
 .stat {
-  position: relative; overflow: hidden; text-align: left; font: inherit; color: inherit;
-  background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 14px 16px;
+  position: relative; min-height: 0; display: flex; flex-direction: column; align-items: flex-start;
+  padding: 24px 24px 22px; text-align: left; font: inherit; color: inherit;
+  background: #fff; border: 1px solid rgba(0, 0, 0, .15); border-radius: 20px;
   transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
 }
-.stat::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--line-3); }
-.stat.is-warn::before { background: var(--warn); }
-.stat.is-ok::before { background: var(--ok); }
-.stat.is-bad::before { background: var(--bad); }
-.stat.is-accent::before { background: var(--accent); }
-.stat:hover { border-color: var(--line-3); box-shadow: var(--shadow-sm); }
-.stat.is-selected { border-color: var(--accent-border); box-shadow: 0 0 0 2px rgba(255, 155, 38, .08); }
-.stat-label { font-size: 11.5px; font-weight: 600; color: var(--muted); }
-.stat-row { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
-.stat-value { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.stat-note { font-size: 11.5px; color: var(--muted-2); }
-.stat-value.is-warn { color: var(--warn-text); }
-.stat-value.is-ok { color: var(--ok-text); }
-.stat-value.is-bad { color: var(--bad-text); }
-.stat-value.is-accent { color: var(--accent-text); }
-.stat-link { display: inline-block; margin-top: 7px; font-size: 10.5px; font-weight: 700; color: var(--muted-2); }
-.stat:hover .stat-link, .stat.is-selected .stat-link { color: var(--accent-text); }
+.stat:hover { box-shadow: 0 10px 28px rgba(0, 0, 0, .08); }
+.stat.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.stat-label { font-size: 22px; font-weight: 600; line-height: 1.2; color: #041D2C; }
+.stat-note { max-width: 240px; margin-top: 10px; font-size: 13px; line-height: 1.5; color: rgba(23, 23, 23, .6); }
+.stat-link { display: inline-flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 14px; font-size: 12.5px; font-weight: 700; color: #252525; }
+.stat-link svg { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--t-fast) var(--ease); }
+.stat:hover .stat-link svg, .stat.is-selected .stat-link svg { transform: translateX(3px); }
+.stat-head { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.stat-value { font-size: 34px; font-weight: 800; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
 
 /* ============================ Barre d'outils du tableau ============================ */
 .table-toolbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 16px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap;
+  padding: 18px 20px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap;
 }
-.segmented { display: flex; background: #F1F5F9; border-radius: 8px; padding: 3px; gap: 2px; }
+.segmented { display: flex; gap: 8px; }
 .segmented button {
-  font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 6px;
-  color: var(--muted); background: transparent;
-  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+  font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 999px;
+  color: var(--muted); background: #fff; border: 1px solid var(--line);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
-.segmented button:hover { color: var(--ink-3); }
-.segmented button[aria-selected="true"] {
-  background: #fff; color: var(--accent-text); box-shadow: var(--shadow-sm);
-}
+.segmented button:hover { color: var(--ink-3); border-color: var(--accent-border); }
+.segmented button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .segmented .seg-count {
-  font-size: 10.5px; font-weight: 700; margin-left: 5px;
+  font-size: 11.5px; font-weight: 700; margin-left: 6px;
   color: var(--muted-2); font-variant-numeric: tabular-nums;
 }
-.segmented button[aria-selected="true"] .seg-count { color: var(--accent-text); }
+.segmented button[aria-selected="true"] .seg-count { color: #fff; }
 
 .search {
   display: flex; align-items: center; gap: 8px;
-  background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: 8px; padding: 7px 11px; min-width: 260px; flex: 0 1 320px;
+  background: #fff; border: 1px solid var(--line);
+  border-radius: 999px; padding: 8px 14px; min-width: 260px; flex: 0 1 340px;
   transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
 .search:focus-within { border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px rgba(255, 155, 38,.14); }
@@ -492,7 +483,7 @@ a { color: var(--accent-text); text-decoration: none; }
 .table-count { margin-left: auto; font-size: 12px; color: var(--muted-2); font-variant-numeric: tabular-nums; }
 
 /* ============================ Tableau des dossiers ============================ */
-.table-scroll { overflow-x: auto; border-radius: 0 0 14px 14px; }
+.table-scroll { overflow-x: auto; border-radius: 0 0 20px 20px; }
 .table { min-width: 1080px; }
 .tr {
   display: flex; align-items: center; gap: 0;
@@ -532,7 +523,7 @@ a { color: var(--accent-text); text-decoration: none; }
 .row.is-updating { opacity: .55; pointer-events: none; }
 .row-id { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--accent-text); }
 .row-name {
-  font-size: 13px; font-weight: 600;
+  font-size: 14px; font-weight: 700; color: var(--ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .row-sub { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
@@ -1331,7 +1322,7 @@ a { color: var(--accent-text); text-decoration: none; }
   }
   .split.is-form-only .split-toggle::before { transform: rotate(-45deg) translate(-1px, 1px); }
   .audit-tip { right: auto; left: 8px; top: auto; bottom: calc(100% - 4px); }
-  .stats { grid-template-columns: repeat(2, minmax(0, 300px)); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 330px)); }
   .detail-actions { width: 100%; margin-left: 0; justify-content: flex-start; }
 }
 
@@ -1367,7 +1358,7 @@ a { color: var(--accent-text); text-decoration: none; }
   .topbar-title h1 { font-size: 17px; }
   .topbar-actions { margin-left: 0; width: 100%; }
   .scroll { padding: 14px 16px 40px; }
-  .stats { grid-template-columns: repeat(2, minmax(0, 300px)); gap: 10px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 330px)); gap: 14px; }
 
   .table-toolbar { gap: 9px; }
   .search { flex: 1 1 100%; min-width: 0; }
@@ -1467,7 +1458,8 @@ body { background: var(--bg); }
 .topbar-title h1 { font-size: 21px; letter-spacing: -.45px; }
 .topbar-title p { margin-top: 3px; font-size: 12.5px; }
 .scroll { padding: 24px 28px 48px; }
-.panel { border-color: #E2E6E2; border-radius: 16px; box-shadow: var(--shadow-sm); }
+.panel { border-color: var(--line); border-radius: 16px; box-shadow: var(--shadow-sm); }
+.wrap-wide > .panel { border-color: rgba(0, 0, 0, .15); border-radius: 20px; box-shadow: none; }
 .btn { min-height: 38px; padding-inline: 15px; border-radius: 10px; }
 .btn-sm { min-height: 32px; }
 
@@ -1585,19 +1577,19 @@ body { background: var(--bg); }
   .dropzone { min-height: 245px; padding: 26px 18px; }
 }
 
-/* ============================ Charte Vitrine digitale ============================ */
-/* Bandeau de tête : dégradé noir → orange, fil d'Ariane, grand titre fin,
-   accroche soulignée d'un trait orange (maquette « Demande de financement »). */
+/* ============================ Charte Wafabail ============================ */
+/* Bandeau de tête : dégradé noir → orange, grand titre fin,
+   accroche soulignée d'un trait orange. */
 .topbar-hero {
   position: relative; overflow: hidden; align-items: flex-end; gap: 20px;
   min-height: 0; padding: 30px 32px 28px; border-bottom: 0; color: #fff; backdrop-filter: none;
-  /* Image et voile repris de la maquette Figma (« Overlay+Gradient »). */
+  /* Image de fond assombrie par un voile. */
   background:
     linear-gradient(90deg, rgba(0, 0, 0, .2), rgba(0, 0, 0, .2)),
     linear-gradient(180deg, rgba(0, 0, 0, .5) 15.25%, rgba(0, 0, 0, 0) 57.72%),
     url('./assets/hero-fond.webp') center 30% / cover no-repeat #0D0D0D;
 }
-/* Motif du logo (Figma, cadre 448 × 297) : carré translucide au-dessus du chevron. */
+/* Motif du logo (cadre 448 × 297) : carré translucide au-dessus du chevron. */
 .hero-mark {
   position: absolute; right: -14px; bottom: -64px; width: 300px; aspect-ratio: 448 / 297;
   pointer-events: none;
@@ -1627,7 +1619,7 @@ body { background: var(--bg); }
   .hero-mark { width: 200px; bottom: -44px; }
 }
 
-/* Centre d'import : parcours en étapes + carte formulaire (maquette Vitrine). */
+/* Centre d'import : parcours en étapes + carte formulaire. */
 .import-steps { margin: 4px 0 22px; }
 .import-steps ol { position: relative; list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); }
 /* Ligne entre le centre de la 1re et de la dernière pastille (colonnes de 25 %). */
@@ -1663,3 +1655,29 @@ body { background: var(--bg); }
   .import-step-label { font-size: 11px; }
   .import-card { padding: 18px 16px; }
 }
+
+/* Page de validation : en-tête du dossier sur le bandeau, plus compact. */
+.topbar-detail.topbar-hero { align-items: center; padding: 18px 24px 20px; }
+.topbar-detail .hero-mark { width: 220px; bottom: -52px; }
+.topbar-detail > div { position: relative; z-index: 1; min-width: 0; }
+.topbar-hero .detail-back {
+  position: relative; z-index: 1; width: 36px; height: 36px;
+  background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .24);
+}
+.topbar-hero .detail-back svg { stroke: #fff; }
+.topbar-hero .detail-back:hover:not(:disabled) { background: rgba(255, 255, 255, .18); border-color: rgba(255, 255, 255, .4); }
+.topbar-hero .detail-id { color: var(--accent); }
+.topbar-hero .detail-name { font-size: clamp(20px, 2vw, 26px); font-weight: 500; letter-spacing: .005em; color: #fff; }
+.topbar-hero .head-fact small { color: rgba(255, 255, 255, .6); }
+.topbar-hero .head-fact b { color: #fff; }
+.topbar-hero .head-fact.is-missing b { color: #FFB966; }
+.topbar-hero .head-fact.is-bad small, .topbar-hero .head-fact.is-bad b { color: #FF9A8F; }
+.topbar-hero .skeleton { position: relative; z-index: 1; background: rgba(255, 255, 255, .14); }
+
+/* Titres de section du formulaire */
+.legend h2 { font-size: 18px; font-weight: 600; }
+
+/* Boutons ronds à icône (zoom, pagination du PDF…) : sans marge intérieure, sinon la
+   règle générale `.btn { padding-inline: 15px }` écrase l'icône dans un rond de 28 px. */
+.btn.btn-icon { width: 32px; height: 32px; min-height: 0; padding: 0; }
+.btn.btn-icon svg { flex: none; }
