@@ -12,8 +12,9 @@ RUN npm ci
 
 COPY index.html vite.config.js postcss.config.js ./
 COPY src ./src
-# Icône de l'onglet (copiée telle quelle dans dist/ par Vite).
-COPY public/favicon.png ./public/favicon.png
+# Fichiers statiques copiés tels quels dans dist/ par Vite : icône de l'onglet et
+# ressources du lecteur PDF (modules de décodage des scans, polices).
+COPY public ./public
 
 RUN npm run build
 

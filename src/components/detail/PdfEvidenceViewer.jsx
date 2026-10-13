@@ -8,6 +8,16 @@ import Icon, { ICONS } from "../Icon.jsx";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+// Ressources de pdf.js servies depuis public/pdfjs : modules de décodage des scans
+// (fax CCITT, JBIG2, JPEG 2000), tables de caractères et polices standard.
+const PDFJS_ASSETS = `${import.meta.env.BASE_URL}pdfjs/`;
+const PDFJS_OPTIONS = {
+  wasmUrl: `${PDFJS_ASSETS}wasm/`,
+  cMapUrl: `${PDFJS_ASSETS}cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${PDFJS_ASSETS}standard_fonts/`,
+};
+
 const fold = (value) => String(value || "").normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -170,9 +180,9 @@ export default function PdfEvidenceViewer({ dossierId, filename, fields, documen
       setFileBlob(blob);
       const data = new Uint8Array(await blob.arrayBuffer());
       if (disposed) return;
-      task = getDocument({ data });
+      task = getDocument({ data, ...PDFJS_OPTIONS });
       const pdf = await task.promise;
-      if (disposed) { pdf.destroy(); return; }
+      if (disposed) { task.destroy(); return; }
       pdfRef.current = pdf;
       setPageCount(pdf.numPages);
       setPageNumber((current) => Math.min(Math.max(1, current), pdf.numPages));
