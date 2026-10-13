@@ -12,14 +12,14 @@ import { TopBar } from "../components/AppShell.jsx";
 import { useDebouncedValue } from "../hooks/index.js";
 import { useToasts } from "../hooks/useToasts.jsx";
 
-// Choix « masquer les dossiers Étude de risque », gardé dans ce navigateur.
+// Choix « masquer les dossiers Étude de risque », gardé dans ce navigateur (activé par défaut).
 const HIDE_SCORING_KEY = "rcc.hideScoring";
 
 function readHideScoring() {
   try {
-    return window.localStorage.getItem(HIDE_SCORING_KEY) === "1";
+    return window.localStorage.getItem(HIDE_SCORING_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
