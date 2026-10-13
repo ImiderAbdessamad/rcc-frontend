@@ -8,7 +8,7 @@ import { clampCompletenessPct, formatAmountMad, formatDate, pluralize } from "..
 import Icon, { ICONS } from "../components/Icon.jsx";
 import Modal, { BusyButton } from "../components/Modal.jsx";
 import { Badge, EmptyState, ErrorState, SkeletonRows } from "../components/States.jsx";
-import { TopBar } from "../components/AppShell.jsx";
+import { HeroMark, TopBar } from "../components/AppShell.jsx";
 import { useDebouncedValue } from "../hooks/index.js";
 import { useToasts } from "../hooks/useToasts.jsx";
 
@@ -298,98 +298,116 @@ export default function DossierList({ activeId }) {
         </div>
       </div>
 
-      <Modal
+      <ConfirmModal
         open={Boolean(hideTarget)}
+        dossier={hideTarget}
+        busy={hiding}
         onClose={() => setHideTarget(null)}
-        labelledBy="hideDossierTitle"
-        dismissible={!hiding}
-        className="delete-modal"
-      >
-        <div className="delete-modal-icon is-neutral" aria-hidden="true">
-          <Icon paths={ICONS.eyeOff} size={22} width={1.8} />
-        </div>
-        <h2 className="modal-title" id="hideDossierTitle">Masquer le dossier</h2>
-        <p className="modal-sub">
-          Le dossier{hideTarget ? ` ${hideTarget.id}` : ""} vient d'Étude de risque : il ne sera plus affiché dans RCC.
-        </p>
-        {hideTarget ? (
-          <div className="delete-modal-recap">
-            <span>
-              <strong>{hideTarget.client_name || "Client non renseigné"}</strong>
-              <small>{hideTarget.id}</small>
-            </span>
-            <Badge tone="neutral" className="badge-xs">Étude de risque</Badge>
-          </div>
-        ) : null}
-        <p className="modal-sub">
-          Rien n'est supprimé : le dossier, sa liasse et son analyse restent intacts dans Étude de risque.
-        </p>
-        <div className="modal-actions">
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setHideTarget(null)}
-            disabled={hiding}
-            data-autofocus=""
-          >
-            Annuler
-          </button>
-          <BusyButton busy={hiding} className="btn btn-primary" onClick={confirmHide}>
-            Masquer dans RCC
-          </BusyButton>
-        </div>
-      </Modal>
+        onConfirm={confirmHide}
+        titleId="hideDossierTitle"
+        icon={ICONS.eyeOff}
+        title="Masquer le dossier"
+        badge={<Badge tone="neutral" className="badge-xs">Étude de risque</Badge>}
+        effects={[
+          { tone: "neutral", text: "Le dossier n'apparaît plus dans la liste RCC." },
+          { tone: "ok", text: "Le dossier, sa liasse et son analyse restent intacts dans Étude de risque." },
+        ]}
+        confirmLabel="Masquer dans RCC"
+        confirmClass="btn btn-primary"
+      />
 
-      <Modal
+      <ConfirmModal
         open={Boolean(deleteTarget)}
+        dossier={deleteTarget}
+        busy={deleting}
         onClose={() => setDeleteTarget(null)}
-        labelledBy="deleteDossierTitle"
-        dismissible={!deleting}
-        className="delete-modal"
-      >
-        <div className="delete-modal-icon" aria-hidden="true">
-          <Icon paths={ICONS.trash} size={22} width={1.8} />
-        </div>
-        <h2 className="modal-title" id="deleteDossierTitle">Supprimer le dossier</h2>
-        <p className="modal-sub">
-          Vous êtes sur le point de supprimer définitivement le dossier
-          {deleteTarget ? ` ${deleteTarget.id}` : ""}.
-        </p>
-        {deleteTarget ? (
-          <div className="delete-modal-recap">
-            <span>
-              <strong>{deleteTarget.client_name || "Client non renseigné"}</strong>
-              <small>{deleteTarget.id}</small>
-            </span>
+        onConfirm={confirmDelete}
+        titleId="deleteDossierTitle"
+        danger
+        icon={ICONS.trash}
+        title="Supprimer le dossier"
+        badge={
+          deleteTarget ? (
             <Badge tone={deleteTarget.has_document ? "bad" : "neutral"} className="badge-xs">
               {deleteTarget.has_document ? "PDF inclus" : "Sans PDF"}
             </Badge>
+          ) : null
+        }
+        effects={[
+          { tone: "bad", text: "La liasse PDF du dossier est supprimée." },
+          { tone: "bad", text: "Les corrections et l'historique associés sont supprimés." },
+        ]}
+        note="Cette action est irréversible."
+        confirmLabel="Supprimer définitivement"
+        confirmClass="btn btn-danger-solid"
+      />
+    </section>
+  );
+}
+
+/** Confirmation d'une action sur un dossier : bandeau de tête, récapitulatif, conséquences. */
+function ConfirmModal({
+  open, dossier, busy, onClose, onConfirm, titleId, danger = false, icon, title,
+  badge, effects, note, confirmLabel, confirmClass,
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      labelledBy={titleId}
+      dismissible={!busy}
+      className={`confirm-modal${danger ? " is-danger" : ""}`}
+    >
+      <header className="confirm-head">
+        <HeroMark />
+        <span className="confirm-icon" aria-hidden="true">
+          <Icon paths={icon} size={20} width={1.8} />
+        </span>
+        <div className="confirm-heading">
+          {dossier ? <span className="confirm-eyebrow">Dossier {dossier.id}</span> : null}
+          <h2 id={titleId}>{title}</h2>
+        </div>
+      </header>
+
+      <div className="confirm-body">
+        {dossier ? (
+          <div className="confirm-recap">
+            <span>
+              <strong title={dossier.client_name}>{dossier.client_name || "Client non renseigné"}</strong>
+              <small>
+                {[dossier.ice ? `ICE ${dossier.ice}` : null, formatAmountMad(dossier.credit_amount)]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </small>
+            </span>
+            {badge}
           </div>
         ) : null}
-        <p className="delete-modal-warning">
-          Le PDF, les corrections et l'historique associés seront également supprimés.
-          Cette action est irréversible.
-        </p>
-        <div className="modal-actions">
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setDeleteTarget(null)}
-            disabled={deleting}
-            data-autofocus=""
-          >
-            Annuler
-          </button>
-          <BusyButton
-            busy={deleting}
-            className="btn btn-danger-solid"
-            onClick={confirmDelete}
-          >
-            Supprimer définitivement
-          </BusyButton>
-        </div>
-      </Modal>
-    </section>
+
+        <ul className="confirm-effects">
+          {effects.map((effect) => (
+            <li key={effect.text} className={`is-${effect.tone}`}>
+              <Icon
+                paths={effect.tone === "ok" ? ICONS.check : effect.tone === "bad" ? ICONS.trash : ICONS.eyeOff}
+                size={13}
+                width={2}
+              />
+              {effect.text}
+            </li>
+          ))}
+        </ul>
+        {note ? <p className="confirm-note">{note}</p> : null}
+      </div>
+
+      <footer className="confirm-actions">
+        <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy} data-autofocus="">
+          Annuler
+        </button>
+        <BusyButton busy={busy} className={confirmClass} onClick={onConfirm}>
+          {confirmLabel}
+        </BusyButton>
+      </footer>
+    </Modal>
   );
 }
 
