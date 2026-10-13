@@ -123,10 +123,11 @@ export const auth = {
 /* ----------------------------------------------------------- Dossiers --- */
 
 export const dossiers = {
-  list: ({ status, search, signal } = {}) => {
+  list: ({ status, search, hideScoring, signal } = {}) => {
     const params = new URLSearchParams();
     if (status && status !== "all") params.set("status", status);
     if (search) params.set("search", search);
+    if (hideScoring) params.set("hide_scoring", "true");
     const query = params.toString();
     return request(`/rcc/dossiers${query ? `?${query}` : ""}`, { signal });
   },
@@ -136,6 +137,9 @@ export const dossiers = {
     request(`/rcc/dossiers/${encodeURIComponent(id)}`, { method: "PATCH", body: payload }),
   remove: (id) =>
     request(`/rcc/dossiers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Masque dans RCC un dossier Étude de risque (il reste intact côté Étude de risque). */
+  hide: (id) =>
+    request(`/rcc/dossiers/${encodeURIComponent(id)}/hide`, { method: "POST" }),
   /** N° tiers choisi parmi les clients du référentiel (`selected`) ou saisi (`manual`). */
   setTiers: (id, { tiers, source }) =>
     request(`/rcc/dossiers/${encodeURIComponent(id)}/tiers`, {

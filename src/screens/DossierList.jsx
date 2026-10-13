@@ -12,6 +12,17 @@ import { TopBar } from "../components/AppShell.jsx";
 import { useDebouncedValue } from "../hooks/index.js";
 import { useToasts } from "../hooks/useToasts.jsx";
 
+// Choix « masquer les dossiers Étude de risque », gardé dans ce navigateur.
+const HIDE_SCORING_KEY = "rcc.hideScoring";
+
+function readHideScoring() {
+  try {
+    return window.localStorage.getItem(HIDE_SCORING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 const FILTERS = [
   { key: "pending", label: "À réviser" },
   { key: "validated", label: "Validés" },
@@ -32,6 +43,9 @@ export default function DossierList({ activeId }) {
   const [error, setError] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [hideTarget, setHideTarget] = useState(null);
+  const [hiding, setHiding] = useState(false);
+  const [hideScoring, setHideScoring] = useState(readHideScoring);
   const abortRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -44,6 +58,7 @@ export default function DossierList({ activeId }) {
       const payload = await api.dossiers.list({
         status,
         search: debouncedSearch.trim(),
+        hideScoring,
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
@@ -58,7 +73,7 @@ export default function DossierList({ activeId }) {
         setLoading(false);
       }
     }
-  }, [status, debouncedSearch, announce]);
+  }, [status, debouncedSearch, hideScoring, announce]);
 
   useEffect(() => {
     setLoading(true);
@@ -79,6 +94,35 @@ export default function DossierList({ activeId }) {
     if (nextStatus === "pending") next.delete("statut");
     else next.set("statut", nextStatus);
     setParams(next, { replace: true });
+  }
+
+  function toggleHideScoring() {
+    const next = !hideScoring;
+    setHideScoring(next);
+    try {
+      window.localStorage.setItem(HIDE_SCORING_KEY, next ? "1" : "0");
+    } catch {
+      /* stockage indisponible : le choix vaut pour cette session */
+    }
+  }
+
+  async function confirmHide() {
+    if (!hideTarget || hiding) return;
+    setHiding(true);
+    try {
+      await api.dossiers.hide(hideTarget.id);
+      const hiddenId = hideTarget.id;
+      setHideTarget(null);
+      toast(`Le dossier ${hiddenId} n'apparaît plus dans RCC. Il reste disponible dans Étude de risque.`, {
+        title: "Dossier masqué",
+        type: "ok",
+      });
+      await load();
+    } catch (err) {
+      toast(err.message, { title: "Masquage impossible", type: "bad", timeout: 7000 });
+    } finally {
+      setHiding(false);
+    }
   }
 
   async function confirmDelete() {
@@ -181,6 +225,12 @@ export default function DossierList({ activeId }) {
                 ) : null}
               </div>
 
+              <label className="switch">
+                <input type="checkbox" checked={hideScoring} onChange={toggleHideScoring} />
+                <span className="switch-track" aria-hidden="true" />
+                Masquer les dossiers Étude de risque
+              </label>
+
               <span className="table-count" aria-live="polite">
                 {loading ? "" : pluralize(data.items.length, "dossier")}
               </span>
@@ -237,6 +287,7 @@ export default function DossierList({ activeId }) {
                         active={dossier.id === activeId}
                         onOpen={() => navigate(`/validation/${encodeURIComponent(dossier.id)}`)}
                         onDelete={() => setDeleteTarget(dossier)}
+                        onHide={() => setHideTarget(dossier)}
                       />
                     ))
                   )}
@@ -246,6 +297,48 @@ export default function DossierList({ activeId }) {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={Boolean(hideTarget)}
+        onClose={() => setHideTarget(null)}
+        labelledBy="hideDossierTitle"
+        dismissible={!hiding}
+        className="delete-modal"
+      >
+        <div className="delete-modal-icon is-neutral" aria-hidden="true">
+          <Icon paths={ICONS.eyeOff} size={22} width={1.8} />
+        </div>
+        <h2 className="modal-title" id="hideDossierTitle">Masquer le dossier</h2>
+        <p className="modal-sub">
+          Le dossier{hideTarget ? ` ${hideTarget.id}` : ""} vient d'Étude de risque : il ne sera plus affiché dans RCC.
+        </p>
+        {hideTarget ? (
+          <div className="delete-modal-recap">
+            <span>
+              <strong>{hideTarget.client_name || "Client non renseigné"}</strong>
+              <small>{hideTarget.id}</small>
+            </span>
+            <Badge tone="neutral" className="badge-xs">Étude de risque</Badge>
+          </div>
+        ) : null}
+        <p className="modal-sub">
+          Rien n'est supprimé : le dossier, sa liasse et son analyse restent intacts dans Étude de risque.
+        </p>
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setHideTarget(null)}
+            disabled={hiding}
+            data-autofocus=""
+          >
+            Annuler
+          </button>
+          <BusyButton busy={hiding} className="btn btn-primary" onClick={confirmHide}>
+            Masquer dans RCC
+          </BusyButton>
+        </div>
+      </Modal>
 
       <Modal
         open={Boolean(deleteTarget)}
@@ -300,7 +393,9 @@ export default function DossierList({ activeId }) {
   );
 }
 
-function DossierRow({ dossier, active, onOpen, onDelete }) {
+function DossierRow({ dossier, active, onOpen, onDelete, onHide }) {
+  // Dossier venant d'Étude de risque : on le masque, on ne le supprime pas.
+  const fromScoring = dossier.origin === "scoring";
   const meta = STATUS_META[dossier.status] || STATUS_META.pending;
   const tone = meta.cls.replace("badge-", "");
   // N° tiers retenu par le backend (vide tant qu'un client reste à choisir).
@@ -336,6 +431,7 @@ function DossierRow({ dossier, active, onOpen, onDelete }) {
               return label;
             })()
           }</span>
+          {fromScoring ? <Badge tone="neutral" className="badge-xs">Étude de risque</Badge> : null}
           {tiers ? <span className="row-sector">Tiers {tiers}</span> : null}
           {dossier.ice ? <span className="row-sector">ICE {dossier.ice}</span> : null}
           {dossier.identifiant_fiscal ? <span className="row-sector">IF {dossier.identifiant_fiscal}</span> : null}
@@ -375,15 +471,27 @@ function DossierRow({ dossier, active, onOpen, onDelete }) {
         >
           <Icon paths={ICONS.eye} size={14} width={1.8} style={{ stroke: "#64748B" }} />
         </button>
-        <button
-          type="button"
-          className="btn-icon btn-icon-danger hint"
-          data-hint="Supprimer le dossier"
-          aria-label={`Supprimer ${dossier.id}`}
-          onClick={(event) => { event.stopPropagation(); onDelete(); }}
-        >
-          <Icon paths={ICONS.trash} size={13} width={1.8} />
-        </button>
+        {fromScoring ? (
+          <button
+            type="button"
+            className="btn-icon hint"
+            data-hint="Masquer dans RCC"
+            aria-label={`Masquer ${dossier.id} dans RCC`}
+            onClick={(event) => { event.stopPropagation(); onHide(); }}
+          >
+            <Icon paths={ICONS.eyeOff} size={14} width={1.8} style={{ stroke: "#64748B" }} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-icon btn-icon-danger hint"
+            data-hint="Supprimer le dossier"
+            aria-label={`Supprimer ${dossier.id}`}
+            onClick={(event) => { event.stopPropagation(); onDelete(); }}
+          >
+            <Icon paths={ICONS.trash} size={13} width={1.8} />
+          </button>
+        )}
       </span>
     </div>
   );
