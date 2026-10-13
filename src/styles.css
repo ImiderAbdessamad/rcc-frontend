@@ -1285,58 +1285,18 @@ a { color: var(--accent-text); text-decoration: none; }
 }
 .modal-recap ul { list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--ink-3); }
 
-/* Confirmation d'action sur un dossier : bandeau de tête à la charte. */
-.modal.confirm-modal { max-width: 480px; padding: 0; overflow: hidden; border-radius: 20px; }
-.confirm-head {
-  position: relative; overflow: hidden; display: flex; align-items: center; gap: 14px;
-  padding: 24px 26px 22px; color: #fff;
-  background:
-    linear-gradient(90deg, rgba(0, 0, 0, .25), rgba(0, 0, 0, .25)),
-    linear-gradient(180deg, rgba(0, 0, 0, .5) 15%, rgba(0, 0, 0, 0) 60%),
-    url('./assets/hero-fond.webp') center 30% / cover no-repeat #0D0D0D;
-}
-.confirm-head .hero-mark { width: 190px; right: -18px; bottom: -42px; }
+/* Confirmation courte d'une action sur un dossier. */
+.modal.confirm-modal { max-width: 400px; padding: 28px 28px 24px; border-radius: 20px; text-align: center; }
 .confirm-icon {
-  position: relative; z-index: 1; flex: 0 0 44px; width: 44px; height: 44px;
-  display: grid; place-items: center; border-radius: 50%;
-  color: #fff; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .24);
+  width: 48px; height: 48px; margin: 0 auto 16px; display: grid; place-items: center;
+  border-radius: 50%; color: var(--accent-text); background: var(--accent-soft);
 }
-.confirm-modal.is-danger .confirm-icon { color: #FF9A8F; background: rgba(219, 36, 36, .18); border-color: rgba(255, 154, 143, .45); }
-.confirm-heading { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.confirm-eyebrow { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--accent); }
-.confirm-heading h2 { font-size: 21px; font-weight: 500; letter-spacing: .01em; line-height: 1.15; color: #fff; }
-
-.confirm-body { padding: 22px 26px 4px; }
-.confirm-recap {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2);
-}
-.confirm-recap > span { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.confirm-recap strong { overflow: hidden; color: var(--ink); font-size: 13.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.confirm-recap small { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
-
-.confirm-effects { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
-.confirm-effects li { display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
-.confirm-effects svg {
-  flex: 0 0 22px; width: 22px; height: 22px; padding: 4px; border-radius: 50%;
-  fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round;
-}
-.confirm-effects .is-bad svg { color: var(--bad-text); background: var(--bad-soft); }
-.confirm-effects .is-ok svg { color: var(--ok-text); background: var(--ok-soft); }
-.confirm-effects .is-neutral svg { color: var(--muted); background: var(--line-2); }
-.confirm-note {
-  margin-top: 16px; padding-left: 12px; border-left: 2px solid var(--bad);
-  color: var(--bad-text); font-size: 12px; font-weight: 600;
-}
-
-.confirm-actions {
-  display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
-  margin-top: 22px; padding: 16px 26px; border-top: 1px solid var(--line-2); background: var(--surface-2);
-}
-@media (max-width: 480px) {
-  .confirm-head, .confirm-body, .confirm-actions { padding-inline: 18px; }
-  .confirm-actions .btn { flex: 1 1 auto; }
-}
+.confirm-modal.is-danger .confirm-icon { color: var(--bad-text); background: var(--bad-soft); }
+.confirm-title { font-size: 18px; font-weight: 700; color: var(--ink); }
+.confirm-text { margin-top: 8px; font-size: 13px; line-height: 1.55; color: var(--muted); }
+.confirm-text strong { color: var(--ink); font-weight: 700; }
+.confirm-actions { display: flex; gap: 10px; margin-top: 24px; }
+.confirm-actions .btn { flex: 1 1 0; justify-content: center; }
 
 /* ============================ Adaptations responsive ============================ */
 

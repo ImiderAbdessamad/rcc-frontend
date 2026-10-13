@@ -8,7 +8,7 @@ import { clampCompletenessPct, formatAmountMad, formatDate, pluralize } from "..
 import Icon, { ICONS } from "../components/Icon.jsx";
 import Modal, { BusyButton } from "../components/Modal.jsx";
 import { Badge, EmptyState, ErrorState, SkeletonRows } from "../components/States.jsx";
-import { HeroMark, TopBar } from "../components/AppShell.jsx";
+import { TopBar } from "../components/AppShell.jsx";
 import { useDebouncedValue } from "../hooks/index.js";
 import { useToasts } from "../hooks/useToasts.jsx";
 
@@ -300,55 +300,41 @@ export default function DossierList({ activeId }) {
 
       <ConfirmModal
         open={Boolean(hideTarget)}
-        dossier={hideTarget}
         busy={hiding}
         onClose={() => setHideTarget(null)}
         onConfirm={confirmHide}
         titleId="hideDossierTitle"
         icon={ICONS.eyeOff}
-        title="Masquer le dossier"
-        badge={<Badge tone="neutral" className="badge-xs">Étude de risque</Badge>}
-        effects={[
-          { tone: "neutral", text: "Le dossier n'apparaît plus dans la liste RCC." },
-          { tone: "ok", text: "Le dossier, sa liasse et son analyse restent intacts dans Étude de risque." },
-        ]}
-        confirmLabel="Masquer dans RCC"
+        title="Masquer ce dossier ?"
+        confirmLabel="Masquer"
         confirmClass="btn btn-primary"
-      />
+      >
+        <strong>{hideTarget?.client_name || hideTarget?.id}</strong> ne sera plus affiché dans RCC.
+        Il reste disponible dans Étude de risque.
+      </ConfirmModal>
 
       <ConfirmModal
         open={Boolean(deleteTarget)}
-        dossier={deleteTarget}
         busy={deleting}
         onClose={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
         titleId="deleteDossierTitle"
         danger
         icon={ICONS.trash}
-        title="Supprimer le dossier"
-        badge={
-          deleteTarget ? (
-            <Badge tone={deleteTarget.has_document ? "bad" : "neutral"} className="badge-xs">
-              {deleteTarget.has_document ? "PDF inclus" : "Sans PDF"}
-            </Badge>
-          ) : null
-        }
-        effects={[
-          { tone: "bad", text: "La liasse PDF du dossier est supprimée." },
-          { tone: "bad", text: "Les corrections et l'historique associés sont supprimés." },
-        ]}
-        note="Cette action est irréversible."
-        confirmLabel="Supprimer définitivement"
+        title="Supprimer ce dossier ?"
+        confirmLabel="Supprimer"
         confirmClass="btn btn-danger-solid"
-      />
+      >
+        <strong>{deleteTarget?.client_name || deleteTarget?.id}</strong> et sa liasse seront supprimés
+        définitivement.
+      </ConfirmModal>
     </section>
   );
 }
 
-/** Confirmation d'une action sur un dossier : bandeau de tête, récapitulatif, conséquences. */
+/** Confirmation courte d'une action sur un dossier. */
 function ConfirmModal({
-  open, dossier, busy, onClose, onConfirm, titleId, danger = false, icon, title,
-  badge, effects, note, confirmLabel, confirmClass,
+  open, busy, onClose, onConfirm, titleId, danger = false, icon, title, confirmLabel, confirmClass, children,
 }) {
   return (
     <Modal
@@ -358,55 +344,19 @@ function ConfirmModal({
       dismissible={!busy}
       className={`confirm-modal${danger ? " is-danger" : ""}`}
     >
-      <header className="confirm-head">
-        <HeroMark />
-        <span className="confirm-icon" aria-hidden="true">
-          <Icon paths={icon} size={20} width={1.8} />
-        </span>
-        <div className="confirm-heading">
-          {dossier ? <span className="confirm-eyebrow">Dossier {dossier.id}</span> : null}
-          <h2 id={titleId}>{title}</h2>
-        </div>
-      </header>
-
-      <div className="confirm-body">
-        {dossier ? (
-          <div className="confirm-recap">
-            <span>
-              <strong title={dossier.client_name}>{dossier.client_name || "Client non renseigné"}</strong>
-              <small>
-                {[dossier.ice ? `ICE ${dossier.ice}` : null, formatAmountMad(dossier.credit_amount)]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </small>
-            </span>
-            {badge}
-          </div>
-        ) : null}
-
-        <ul className="confirm-effects">
-          {effects.map((effect) => (
-            <li key={effect.text} className={`is-${effect.tone}`}>
-              <Icon
-                paths={effect.tone === "ok" ? ICONS.check : effect.tone === "bad" ? ICONS.trash : ICONS.eyeOff}
-                size={13}
-                width={2}
-              />
-              {effect.text}
-            </li>
-          ))}
-        </ul>
-        {note ? <p className="confirm-note">{note}</p> : null}
-      </div>
-
-      <footer className="confirm-actions">
+      <span className="confirm-icon" aria-hidden="true">
+        <Icon paths={icon} size={20} width={1.8} />
+      </span>
+      <h2 className="confirm-title" id={titleId}>{title}</h2>
+      <p className="confirm-text">{children}</p>
+      <div className="confirm-actions">
         <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy} data-autofocus="">
           Annuler
         </button>
         <BusyButton busy={busy} className={confirmClass} onClick={onConfirm}>
           {confirmLabel}
         </BusyButton>
-      </footer>
+      </div>
     </Modal>
   );
 }
